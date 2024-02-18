@@ -4,22 +4,22 @@ import http from '../lib/http';
 import { Actor, AcctUri } from './data';
 
 interface Singletons {
-  actors: Actors;
+  actorRepository: ActorRepository;
 }
 
 const singletons = {} as Singletons;
 
-export function getActors(): Actors {
-  if (!singletons.actors) {
-    singletons.actors = new Actors();
+export function getActorRepository(): ActorRepository {
+  if (!singletons.actorRepository) {
+    singletons.actorRepository = new ActorRepository();
   }
-  return singletons.actors;
+  return singletons.actorRepository;
 }
 
 const asNamespace = "https://www.w3.org/ns/activitystreams#";
 const acceptActivityJsonHeader = {"Accept": "application/activity+json"};
 
-export class Actors {
+export class ActorRepository {
   async fetchByAcctUri(acctUri: AcctUri): Promise<Actor|undefined> {
     const id = await this.fetchActorIdByAcctUri(acctUri);
     return id ? await this.fetch(id) : undefined;

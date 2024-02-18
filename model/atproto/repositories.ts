@@ -3,7 +3,7 @@ import { ProfileViewDetailed } from '@atproto/api/dist/client/types/app/bsky/act
 
 interface Singletons {
   bskyAgent?: BskyAgent;
-  actors?: Actors;
+  actorRepository?: ActorRepository;
 }
 
 const singletons = {} as Singletons;
@@ -15,14 +15,14 @@ function getBskyAgent(): BskyAgent {
   return singletons.bskyAgent;
 }
 
-export function getActors(): Actors {
-  if (!singletons.actors) {
-    singletons.actors = new Actors();
+export function getActorRepository(): ActorRepository {
+  if (!singletons.actorRepository) {
+    singletons.actorRepository = new ActorRepository();
   }
-  return singletons.actors;
+  return singletons.actorRepository;
 }
 
-export class Actors {
+export class ActorRepository {
   async fetch(id: string): Promise<ProfileViewDetailed|undefined> {
     try {
       const agent = getBskyAgent();

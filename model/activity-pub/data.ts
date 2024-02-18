@@ -21,7 +21,12 @@ export function getAcctUri(actor: Actor): AcctUri {
   return { user: actor.preferredUsername || urlLastPath, host: host };
 }
 
-export function userHostToAcctUri(userHost: string): AcctUri|undefined {
+export function getHandle(actor: Actor): string {
+  const acctUri = getAcctUri(actor);
+  return `${acctUri.user}@${acctUri.host}`;
+}
+
+export function handleToAcctUri(userHost: string): AcctUri|undefined {
   const [ user, host ] = userHost.split('@');
   if (!user || !host) return undefined;
   return { user, host };

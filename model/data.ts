@@ -14,7 +14,7 @@ export interface Actor {
   id: ActorId;
   uri: string;
   name: string;
-  screenName: string;
+  handle: string;
   icon?: string;
 }
 
@@ -38,4 +38,14 @@ export interface EmbededImage {
   width?: number;
   height?: number;
   alt?: string;
+}
+
+export interface GroupId {
+  value: number;
+}
+
+export interface Group {
+  id: GroupId;
+  name: string;
+  actorIds: ActorId[];
 }

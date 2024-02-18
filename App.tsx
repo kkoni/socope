@@ -1,10 +1,9 @@
 import { RecoilRoot } from 'recoil';
 import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
-import AddGroup from './components/AddGroup';
-import Main from './components/Main';
+import AddGroupScreen from './components/AddGroupScreen';
 
 const Stack = createStackNavigator();
 
@@ -13,8 +12,7 @@ export default function App() {
     <RecoilRoot>
       <NavigationContainer>
         <Stack.Navigator>
-          <Stack.Screen name="Main" component={Main}/>
-          <Stack.Screen name="AddGroup" component={AddGroup}/>
+          <Stack.Screen name="AddGroupScreen" component={AddGroupScreen}/>
         </Stack.Navigator>
         <StatusBar style="auto" />
       </NavigationContainer>
