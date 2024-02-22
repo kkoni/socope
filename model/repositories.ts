@@ -1,5 +1,5 @@
 import { ProfileViewDetailed } from '@atproto/api/dist/client/types/app/bsky/actor/defs';
-import { Actor as ActivityPubActor, getHandle } from './activity-pub/data';
+import { Actor as ActivityPubActor, getHandle, handleToAcctUri } from './activity-pub/data';
 import { getActorRepository as getActivityPubActorRepository } from './activity-pub/repositories';
 import { getActorRepository as getATProtoActorRepository } from './atproto/repositories';
 import { Actor, ActorId, Group, GroupId, SNSType, SNSTypes } from './data';
@@ -29,7 +29,11 @@ export class ActorRepository {
   async fetchByHandle(snsType: SNSType, handle: string): Promise<Actor|undefined> {
     switch (snsType) {
       case SNSTypes.ActivityPub:
-        const activityPubActor = await getActivityPubActorRepository().fetch(handle);
+        const acctUri = handleToAcctUri(handle);
+        if (acctUri === undefined) {
+          return undefined;
+        }
+        const activityPubActor = await getActivityPubActorRepository().fetchByAcctUri(acctUri);
         return activityPubActor ? this.convertActivityPubActor(activityPubActor) : undefined;
       case SNSTypes.ATProto:
         const atProtoActor = await getATProtoActorRepository().fetch(handle);

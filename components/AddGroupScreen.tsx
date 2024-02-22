@@ -54,7 +54,7 @@ export default function AddGroupScreen() {
     setActorsToAdd(actorsToAdd.filter(actor => actorIdToString(actor.id) !== actorIdStr));
   }
 
-  const actorViews = actorsToAdd.map(actor => (
+  const createActorView = (actor: Actor) => (
     <View key={actorIdToString(actor.id)} style={styles.actorView}>
       <View style={styles.actorIconView}>
         { actor.icon && <Avatar.Image source={{uri: actor.icon}} size={48}/> }
@@ -66,7 +66,10 @@ export default function AddGroupScreen() {
         <Button mode="text" style={styles.actorRemoveButton} onPress={() => removeActor(actor.id)}>Remove</Button>
       </View>
     </View>
-  ));
+  );
+
+  const activityPubActorViews = actorsToAdd.filter(a => a.id.snsType === SNSTypes.ActivityPub).map(createActorView);
+  const atProtoActorViews = actorsToAdd.filter(a => a.id.snsType === SNSTypes.ATProto).map(createActorView);
 
   return (
     <View>
@@ -85,10 +88,18 @@ export default function AddGroupScreen() {
         autoCapitalize='none'
       />
       <Button mode="contained" onPress={addActor} style={styles.addButton}>Add</Button>
-      { actorViews.length > 0 && (
+      { activityPubActorViews.length > 0 && (
         <View>
           <Divider/>
-          { actorViews }
+          <Text>ActivityPub</Text>
+          { activityPubActorViews }
+        </View>
+      )}
+      { atProtoActorViews.length > 0 && (
+        <View>
+          <Divider/>
+          <Text>ATProto</Text>
+          { atProtoActorViews }
         </View>
       )}
       <Portal>
