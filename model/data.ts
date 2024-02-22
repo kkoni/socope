@@ -5,6 +5,16 @@ export const SNSTypes = {
 
 export type SNSType = typeof SNSTypes[keyof typeof SNSTypes];
 
+export function parseSNSType(s: string): SNSType|undefined {
+  switch (s) {
+    case SNSTypes.ActivityPub:
+    case SNSTypes.ATProto:
+      return s;
+    default:
+      return undefined;
+  }
+}
+
 export interface ActorId {
   snsType: SNSType;
   value: string;
@@ -48,4 +58,8 @@ export interface Group {
   id: GroupId;
   name: string;
   actorIds: ActorId[];
+}
+
+export function actorIdToString(actorId: ActorId): string {
+  return `${actorId.snsType}:${actorId.value}`;
 }
