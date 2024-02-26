@@ -1,9 +1,7 @@
 import 'fast-text-encoding';
 import 'react-native-url-polyfill/auto';
-import { useEffect } from 'react';
 import { RecoilRoot, useRecoilState } from 'recoil';
 import { StatusBar } from 'expo-status-bar';
-import { StyleSheet } from 'react-native';
 import {
   PaperProvider,
   MD3LightTheme,
@@ -15,11 +13,10 @@ import {
   DefaultTheme as NavigationDefaultTheme,
 } from '@react-navigation/native';
 import { createDrawerNavigator } from '@react-navigation/drawer';
-import { createMaterialTopTabNavigator } from '@react-navigation/material-top-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
 import CreateGroupScreen from './components/CreateGroupScreen';
-import GroupScreen from './components/GroupScreen';
-import { allGroupsState, jumpedGroupIdState } from './states';
+import HomeScreen from './components/HomeScreen';
+import { allGroupsState } from './states';
 
 const { LightTheme } = adaptNavigationTheme({
   reactNavigationLight: NavigationDefaultTheme,
@@ -35,7 +32,6 @@ const CombinedLightTheme = {
 };
 
 const Drawer = createDrawerNavigator();
-const Tab = createMaterialTopTabNavigator();
 const Stack = createStackNavigator();
 
 export default function App() {
@@ -73,35 +69,3 @@ export function MainContainer() {
     </Drawer.Navigator>
   );
 }
-
-export function HomeScreen({navigation}: {navigation: any}) {
-  const [ allGroups ] = useRecoilState(allGroupsState);
-  const [ jumpedGroupId, setJumpedGroupId ] = useRecoilState(jumpedGroupIdState);
-
-  useEffect(() => {
-    if (jumpedGroupId !== undefined && allGroups.some(group => group.id.value === jumpedGroupId.value)) {
-      setJumpedGroupId(undefined);
-      navigation.navigate('Group' + jumpedGroupId.value);
-    }
-  }, [ jumpedGroupId ]);
-
-  const tabScreens = allGroups.map(group => (
-    <Tab.Screen key={group.id.toString()} name={"Group" + group.id.value} options={{tabBarLabel: group.name}}>
-      {() => <GroupScreen group={group}/>}
-    </Tab.Screen>
-  ));
-  return (
-    <Tab.Navigator>
-      {tabScreens}
-    </Tab.Navigator>
-  );
-}
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-});
