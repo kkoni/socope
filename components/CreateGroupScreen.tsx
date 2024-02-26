@@ -1,26 +1,21 @@
 import { useState } from 'react';
 import { View, StyleSheet } from 'react-native';
-import { Avatar, Button, Divider, Portal, RadioButton, Snackbar, Text, TextInput } from 'react-native-paper';
-import { Actor, ActorId, SNSType, SNSTypes, parseSNSType, actorIdToString } from '../model/data';
-import { getActorRepository } from '../model/repositories';
+import { useRecoilState } from 'recoil';
+import { Avatar, Button, Portal, Snackbar, Text, TextInput } from 'react-native-paper';
+import { allGroupsState, jumpedGroupIdState } from '../states';
+import { Actor, ActorId, SNSTypes, actorIdToString } from '../model/data';
+import { getActorRepository, getGroupRepository } from '../model/repositories';
 
-export default function AddGroupScreen() {
-  const [ snsType, setSnsType ] = useState<SNSType>(SNSTypes.ActivityPub);
+export default function CreateGroupScreen() {
+  const [ allGroups, setAllGroups ] = useRecoilState(allGroupsState);
+  const [ _, setJumpedGroupId ] = useRecoilState(jumpedGroupIdState);
+
+  const [ groupName, setGroupName ] = useState<string>('');
   const [ handle, setHandle ] = useState<string>('');
   const [ actorsToAdd, setActorsToAdd ] = useState<Actor[]>([]);
   const [ actorFetchErrorSnackbarVisible, setActorFetchErrorSnackbarVisible ] = useState<boolean>(false);
   const [ actorFetchError, setActorFetchError ] = useState<string>('');
   const [ actorAddedSnackbarVisible, setActorAddedSnackbarVisible ] = useState<boolean>(false);
-
-  let handleInputPlaceholder = '';
-  switch (snsType) {
-    case SNSTypes.ActivityPub:
-      handleInputPlaceholder = 'Enter user and host (e.g. xxx@mastodon.social)';
-      break;
-    case SNSTypes.ATProto:
-      handleInputPlaceholder = 'Enter a handle (e.g. xxx.bsky.social)';
-      break;
-  }
 
   const addActor = async () => {
     try {
@@ -30,9 +25,13 @@ export default function AddGroupScreen() {
         setActorFetchErrorSnackbarVisible(true);
         return;
       }
-      const actor = await getActorRepository().fetchByHandle(snsType, trimmedHandle);
+      const actor = await getActorRepository().fetchByHandle(trimmedHandle);
       if (actor === undefined) {
         setActorFetchError('Actor not found');
+        setActorAddedSnackbarVisible(false);
+        setActorFetchErrorSnackbarVisible(true);
+      } else if (actorsToAdd.some(a => actorIdToString(a.id) === actorIdToString(actor.id))) {
+        setActorFetchError('Actor already added');
         setActorAddedSnackbarVisible(false);
         setActorFetchErrorSnackbarVisible(true);
       } else {
@@ -54,6 +53,17 @@ export default function AddGroupScreen() {
     setActorsToAdd(actorsToAdd.filter(actor => actorIdToString(actor.id) !== actorIdStr));
   }
 
+  const createGroup = async () => {
+    const groupRepository = getGroupRepository();
+    let name = groupName.trim();
+    if (name.length === 0) {
+      name = 'Group ' + groupRepository.getNextId().value;
+    }
+    const createdGroup = getGroupRepository().create(name, actorsToAdd.map(a => a.id));
+    setAllGroups([...allGroups, createdGroup]);
+    setJumpedGroupId(createdGroup.id);
+  }
+
   const createActorView = (actor: Actor) => (
     <View key={actorIdToString(actor.id)} style={styles.actorView}>
       <View style={styles.actorIconView}>
@@ -73,35 +83,37 @@ export default function AddGroupScreen() {
 
   return (
     <View>
-      <Text>Specify some persons you want to follow up.</Text>
-      <RadioButton.Group
-        onValueChange={v => setSnsType(parseSNSType(v) || SNSTypes.ActivityPub)}
-        value={snsType}
-      >
-        <RadioButton.Item label="ActivityPub" value={SNSTypes.ActivityPub}/>
-        <RadioButton.Item label="ATProto" value={SNSTypes.ATProto}/>
-      </RadioButton.Group>
+      <Text>Group Name</Text>
+      <TextInput
+        value={groupName}
+        onChangeText={setGroupName}
+        placeholder="Enter the name of the new group"
+        autoCapitalize='none'
+      />
+      <Text>
+        Specify some ActivityPub(Mastodon etc.) or ATProto(BlueSky) users you want to follow up.
+        (e.g. xxx@mastodon.social for ActivityPub or xxx.bsky.social for ATProto)
+      </Text>
       <TextInput
         value={handle}
         onChangeText={setHandle}
-        placeholder={handleInputPlaceholder}
+        placeholder="Enter a handle"
         autoCapitalize='none'
       />
       <Button mode="contained" onPress={addActor} style={styles.addButton}>Add</Button>
       { activityPubActorViews.length > 0 && (
-        <View>
-          <Divider/>
-          <Text>ActivityPub</Text>
+        <View style={styles.actorListView}>
+          <Text variant="titleSmall" style={styles.actorListViewHeader}>ActivityPub</Text>
           { activityPubActorViews }
         </View>
       )}
       { atProtoActorViews.length > 0 && (
-        <View>
-          <Divider/>
-          <Text>ATProto</Text>
+        <View style={styles.actorListView}>
+          <Text variant="titleSmall" style={styles.actorListViewHeader}>ATProto</Text>
           { atProtoActorViews }
         </View>
       )}
+      { actorsToAdd.length > 0 && <Button mode="contained" onPress={createGroup}>Create Group</Button> }
       <Portal>
         <Snackbar
           visible={actorFetchErrorSnackbarVisible}
@@ -117,7 +129,7 @@ export default function AddGroupScreen() {
           onDismiss={() => setActorAddedSnackbarVisible(false)}
           duration={3000}
         >
-          <Text>Actor successfully added.</Text>
+          <Text>Actor found.</Text>
         </Snackbar>
       </Portal>
     </View>
@@ -125,10 +137,12 @@ export default function AddGroupScreen() {
 }
 
 const styles = StyleSheet.create({
-  addButton: { marginTop: 10 },
+  addButton: { marginTop: 10, marginBottom: 10 },
   actorView: { flexDirection: 'row' },
   actorIconView: { flex: 1 },
   actorNameView: { flex: 3, justifyContent: 'center', marginLeft: 10 },
   actorRemoveView: { flex: 2, justifyContent: 'center' },
   actorRemoveButton: { padding: 0 },
+  actorListView: { marginTop: 10 },
+  actorListViewHeader: { marginBottom: 5 },
 });

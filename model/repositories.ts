@@ -25,8 +25,14 @@ export function getGroupRepository(): GroupRepository {
   return singletons.groupRepository;
 }
 
+const activityPubHandleRegex = /^[^@]+@[^@]+$/
+
 export class ActorRepository {
-  async fetchByHandle(snsType: SNSType, handle: string): Promise<Actor|undefined> {
+  async fetchByHandle(handle: string): Promise<Actor|undefined> {
+    let snsType: SNSType = SNSTypes.ATProto;
+    if (handle.match(activityPubHandleRegex)) {
+      snsType = SNSTypes.ActivityPub;
+    }
     switch (snsType) {
       case SNSTypes.ActivityPub:
         const acctUri = handleToAcctUri(handle);
@@ -66,12 +72,8 @@ export class GroupRepository {
   private list: Group[] = [];
 
   create(name: string, actorIds: ActorId[]): Group {
-    let newId = 1;
-    if (this.list.length >= 1) {
-      newId = Math.max(...this.list.map((group) => group.id.value)) + 1;
-    }
     const newGroup: Group = {
-      id: { value: newId },
+      id: this.getNextId(),
       name,
       actorIds,
     };
@@ -98,5 +100,13 @@ export class GroupRepository {
 
   getAll(): Group[] {
     return this.list;
+  }
+
+  getNextId(): GroupId {
+    let nextId = 1;
+    if (this.list.length >= 1) {
+      nextId = Math.max(...this.list.map((group) => group.id.value)) + 1;
+    }
+    return { value: nextId };
   }
 }
