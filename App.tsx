@@ -16,6 +16,7 @@ import { createDrawerNavigator } from '@react-navigation/drawer';
 import { createStackNavigator } from '@react-navigation/stack';
 import CreateGroupScreen from './components/CreateGroupScreen';
 import HomeScreen from './components/HomeScreen';
+import GroupDetailScreen from './components/GroupDetailScreen';
 import { allGroupsState } from './states';
 
 const { LightTheme } = adaptNavigationTheme({
@@ -66,6 +67,7 @@ export function MainContainer() {
     <Drawer.Navigator screenOptions={{headerShown: true}}>
       <Drawer.Screen name="Home" options={{headerTitle: 'Soccet'}} component={HomeScreen}/>
       <Drawer.Screen name="Create a Gruop" component={CreateGroupScreen}/>
+      <Drawer.Screen name="Group Detail" component={GroupDetailScreen}/>
     </Drawer.Navigator>
   );
 }

@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { RecoilRoot, useRecoilState } from 'recoil';
+import { useRecoilState } from 'recoil';
 import { createMaterialTopTabNavigator } from '@react-navigation/material-top-tabs';
 import { allGroupsState, jumpedGroupIdState } from '../states';
 import GroupScreen from './GroupScreen';
@@ -19,7 +19,7 @@ export default function HomeScreen({navigation}: {navigation: any}) {
 
   const tabScreens = allGroups.map(group => (
     <Tab.Screen key={group.id.toString()} name={"Group" + group.id.value} options={{tabBarLabel: group.name}}>
-      {() => <GroupScreen group={group}/>}
+      {() => <GroupScreen group={group} navigation={navigation}/>}
     </Tab.Screen>
   ));
   return (

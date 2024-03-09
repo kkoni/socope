@@ -10,3 +10,8 @@ export const jumpedGroupIdState = atom<GroupId|undefined>({
   key: 'jumpedGroupIdState',
   default: undefined,
 });
+
+export const selectedGroupIdState = atom<GroupId|undefined>({
+  key: 'selectedGroupIdState',
+  default: undefined,
+});
