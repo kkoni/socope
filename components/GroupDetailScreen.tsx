@@ -2,8 +2,10 @@ import { useState, useEffect } from 'react';
 import { useRecoilState } from 'recoil';
 import { StyleSheet, View } from 'react-native';
 import { Avatar, Button, Portal, Snackbar, Text, TextInput } from 'react-native-paper';
+import deepEqual from 'deep-equal';
 import { selectedGroupIdState, allGroupsState } from '../states';
-import { actorIdToString, Actor, ActorId, Group, SNSTypes } from '../model/data';
+import { updateGroup } from '../facades';
+import { Actor, ActorId, Group, SNSTypes } from '../model/data';
 import { getActorRepository, getGroupRepository } from '../model/repositories';
 
 export default function GroupDetailScreen() {
@@ -26,7 +28,7 @@ export default function GroupDetailScreen() {
         for (const actorId of group.actorIds) {
           const actor = await actorRepository.get(actorId);
           if (actor !== undefined) {
-            actors.set(actorIdToString(actor.id), actor);
+            actors.set(actor.id.toString(), actor);
           }
         }
         setActors(actors);
@@ -88,7 +90,7 @@ type GroupDetailViewProps = {
 
 function GroupDetailView(props: GroupDetailViewProps) {
   const createActorView = (actorId: ActorId, actor: Actor|undefined) => (
-    <View key={actorIdToString(actorId)} style={groupDetailStyles.actorView}>
+    <View key={actorId.toString()} style={groupDetailStyles.actorView}>
       { actor?.icon &&
         <View style={groupDetailStyles.actorIconView}>
           <Avatar.Image source={{uri: actor.icon}} size={48}/>
@@ -108,10 +110,10 @@ function GroupDetailView(props: GroupDetailViewProps) {
   );
 
   const activityPubActorViews = props.group.actorIds.filter(aid => aid.snsType === SNSTypes.ActivityPub).map(actorId => {
-    return createActorView(actorId, props.actors.get(actorIdToString(actorId)));
+    return createActorView(actorId, props.actors.get(actorId.toString()));
   });
   const atProtoActorViews = props.group.actorIds.filter(aid => aid.snsType === SNSTypes.ATProto).map(actorId => {
-    return createActorView(actorId, props.actors.get(actorIdToString(actorId)));
+    return createActorView(actorId, props.actors.get(actorId.toString()));
   });
 
   return (
@@ -174,15 +176,15 @@ function GroupEditorView(props: GroupEditorViewProps) {
   useEffect(() => {
     setGroupName(props.group.name);
     const initialActorStatuses: GroupEditorActorStatus[] = props.group.actorIds.map(actorId => 
-      ({ actorId: actorId, actor: props.currentActors.get(actorIdToString(actorId)), status: 'unchanged'})
+      ({ actorId: actorId, actor: props.currentActors.get(actorId.toString()), status: 'unchanged'})
     );
     setActors(initialActorStatuses);
   }, [props.group, props.currentActors]);
 
-  const addActor = (actorId: ActorId) => {
+  const addActorHandler = (actorId: ActorId) => {
     setActors(actors.map(a => {
       const diff: any = {};
-      if (a.actorId.value === actorId.value) {
+      if (deepEqual(a.actorId, actorId)) {
         if (a.status === 'removed') {
           diff.status = 'unchanged';
         } else {
@@ -193,10 +195,10 @@ function GroupEditorView(props: GroupEditorViewProps) {
     }));
   };
 
-  const removeActor = (actorId: ActorId) => {
+  const removeActorHandler = (actorId: ActorId) => {
     setActors(actors.map(a => {
       const diff: any = {};
-      if (a.actorId.value === actorId.value) {
+      if (deepEqual(a.actorId, actorId.value)) {
         if (a.status === 'unchanged') {
           diff.status = 'removed';
         } else {
@@ -207,7 +209,7 @@ function GroupEditorView(props: GroupEditorViewProps) {
     }).filter(a => a !== undefined));
   }
 
-  const addNewActor = async () => {
+  const addNewActorHandler = async () => {
     try {
       const trimmedHandle = handle.trim();
       if (trimmedHandle === '') {
@@ -220,7 +222,7 @@ function GroupEditorView(props: GroupEditorViewProps) {
         setActorFetchError('Actor not found');
         setActorAddedSnackbarVisible(false);
         setActorFetchErrorSnackbarVisible(true);
-      } else if (actors.some(a => actorIdToString(a.actorId) === actorIdToString(actor.id))) {
+      } else if (actors.some(a => deepEqual(a.actorId, actor.id))) {
         setActorFetchError('Actor already added');
         setActorAddedSnackbarVisible(false);
         setActorFetchErrorSnackbarVisible(true);
@@ -238,28 +240,20 @@ function GroupEditorView(props: GroupEditorViewProps) {
     }
   };
 
-  const updateGroup = async () => {
+  const updateGroupHandler = async () => {
     const actorIds = actors.filter(a => a.status !== 'removed').map(a => a.actorId);
     const updatedGroup = {
       id: props.group.id,
       name: groupName,
       actorIds: actorIds,
     };
-    getGroupRepository().store(updatedGroup);
-    const updatedAllGroups = allGroups.map(group => {
-      if (group.id.value === props.group.id.value) {
-        return updatedGroup;
-      } else {
-        return group;
-      }
-    });
-    setAllGroups(updatedAllGroups);
+    updateGroup(updatedGroup, [allGroups, setAllGroups]);
     props.updateGroupHandler();
   };
 
-  const createActorView = (actorStatus: GroupEditorActorStatus) => (
-    <View
-      key={actorIdToString(actorStatus.actorId)}
+  const createActorView = (actorStatus: GroupEditorActorStatus) => {
+    return (<View
+      key={actorStatus.actorId.toString()}
       style={actorStatus.status === 'removed' ? groupEditorStyles.removedActorView : groupEditorStyles.actorView}
     >
       { actorStatus.actor?.icon &&
@@ -282,23 +276,23 @@ function GroupEditorView(props: GroupEditorViewProps) {
       </View>
       { actorStatus.status === 'removed' &&
         <View style={groupEditorStyles.actorButtonView}>
-          <Button style={groupEditorStyles.actorButton} onPress={() => addActor(actorStatus.actorId)}>Add</Button>
+          <Button style={groupEditorStyles.actorButton} onPress={() => addActorHandler(actorStatus.actorId)}>Add</Button>
         </View>
       }
       { actorStatus.status !== 'removed' &&
         <View style={groupEditorStyles.actorButtonView}>
-          <Button style={groupEditorStyles.actorButton} onPress={() => removeActor(actorStatus.actorId)}>Remove</Button>
+          <Button style={groupEditorStyles.actorButton} onPress={() => removeActorHandler(actorStatus.actorId)}>Remove</Button>
         </View>
       }
-    </View>
-  );
+    </View>);
+  };
   const activityPubActorViews = actors.filter(a => a.actorId.snsType === SNSTypes.ActivityPub).map(createActorView);
   const atProtoActorViews = actors.filter(a => a.actorId.snsType === SNSTypes.ATProto).map(createActorView);
   
   return (
     <View>
       <View style={groupEditorStyles.editButtonsView}>
-        <Button mode="contained" onPress={updateGroup} style={groupEditorStyles.editButton}>Update</Button>
+        <Button mode="contained" onPress={updateGroupHandler} style={groupEditorStyles.editButton}>Update</Button>
         <Button mode="contained" onPress={props.cancelEditHandler} style={groupEditorStyles.editButton}>Cancel</Button>
       </View>
       <Text>Group Name</Text>
@@ -317,7 +311,7 @@ function GroupEditorView(props: GroupEditorViewProps) {
         placeholder="Enter a handle"
         autoCapitalize='none'
       />
-      <Button mode="contained" onPress={addNewActor} style={groupEditorStyles.addButton}>Add</Button>
+      <Button mode="contained" onPress={addNewActorHandler} style={groupEditorStyles.addButton}>Add</Button>
       { activityPubActorViews.length > 0 && (
         <View style={groupEditorStyles.actorListView}>
           <Text variant="titleSmall" style={groupEditorStyles.actorListViewHeader}>ActivityPub</Text>

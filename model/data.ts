@@ -1,3 +1,5 @@
+import deepEqual from 'deep-equal';
+
 export const SNSTypes = {
   ActivityPub: "ActivityPub",
   ATProto: "ATProto",
@@ -15,9 +17,22 @@ export function parseSNSType(s: string): SNSType|undefined {
   }
 }
 
-export interface ActorId {
+export class ActorId {
   snsType: SNSType;
   value: string;
+
+  constructor(snsType: SNSType, value: string) {
+    this.snsType = snsType;
+    this.value = value;
+  }
+
+  toString(): string {
+    return `${this.snsType}:${this.value}`;
+  }
+
+  equals(other: ActorId): boolean {
+    return deepEqual(this, other);
+  }
 }
 
 export interface Actor {
@@ -28,9 +43,18 @@ export interface Actor {
   icon?: string;
 }
 
-export interface PostId {
+export class PostId {
   snsType: SNSType;
   value: string;
+
+  constructor(snsType: SNSType, value: string) {
+    this.snsType = snsType;
+    this.value = value;
+  }
+
+  toString(): string {
+    return `${this.snsType}:${this.value}`;
+  }
 }
 
 export interface Post {
@@ -50,16 +74,24 @@ export interface EmbededImage {
   alt?: string;
 }
 
-export interface GroupId {
+export class GroupId {
   value: number;
+
+  constructor(value: number) {
+    this.value = value;
+  }
+
+  toString(): string {
+    return this.value.toString();
+  }
+
+  equals(other: GroupId): boolean {
+    return deepEqual(this, other);
+  }
 }
 
 export interface Group {
   id: GroupId;
   name: string;
   actorIds: ActorId[];
-}
-
-export function actorIdToString(actorId: ActorId): string {
-  return `${actorId.snsType}:${actorId.value}`;
 }

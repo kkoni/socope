@@ -3,12 +3,13 @@ import { View, StyleSheet } from 'react-native';
 import { useRecoilState } from 'recoil';
 import { Avatar, Button, Portal, Snackbar, Text, TextInput } from 'react-native-paper';
 import { allGroupsState, jumpedGroupIdState } from '../states';
-import { Actor, ActorId, SNSTypes, actorIdToString } from '../model/data';
+import { createGroup } from '../facades';
+import { Actor, ActorId, SNSTypes } from '../model/data';
 import { getActorRepository, getGroupRepository } from '../model/repositories';
 
 export default function CreateGroupScreen() {
   const [ allGroups, setAllGroups ] = useRecoilState(allGroupsState);
-  const [ _, setJumpedGroupId ] = useRecoilState(jumpedGroupIdState);
+  const [ jumpedGroupId, setJumpedGroupId ] = useRecoilState(jumpedGroupIdState);
 
   const [ groupName, setGroupName ] = useState<string>('');
   const [ handle, setHandle ] = useState<string>('');
@@ -17,7 +18,7 @@ export default function CreateGroupScreen() {
   const [ actorFetchError, setActorFetchError ] = useState<string>('');
   const [ actorAddedSnackbarVisible, setActorAddedSnackbarVisible ] = useState<boolean>(false);
 
-  const addActor = async () => {
+  const addActorHandler = async () => {
     try {
       const trimmedHandle = handle.trim();
       if (trimmedHandle === '') {
@@ -30,7 +31,7 @@ export default function CreateGroupScreen() {
         setActorFetchError('Actor not found');
         setActorAddedSnackbarVisible(false);
         setActorFetchErrorSnackbarVisible(true);
-      } else if (actorsToAdd.some(a => actorIdToString(a.id) === actorIdToString(actor.id))) {
+      } else if (actorsToAdd.some(a => a.id.equals(actor.id))) {
         setActorFetchError('Actor already added');
         setActorAddedSnackbarVisible(false);
         setActorFetchErrorSnackbarVisible(true);
@@ -48,24 +49,21 @@ export default function CreateGroupScreen() {
     }
   };
 
-  const removeActor = async (actorId: ActorId) => {
-    const actorIdStr = actorIdToString(actorId);
-    setActorsToAdd(actorsToAdd.filter(actor => actorIdToString(actor.id) !== actorIdStr));
+  const removeActorHandler = async (actorId: ActorId) => {
+    setActorsToAdd(actorsToAdd.filter(actor => !actor.id.equals(actorId)));
   }
 
-  const createGroup = async () => {
+  const createGroupHandler = async () => {
     const groupRepository = getGroupRepository();
     let name = groupName.trim();
     if (name.length === 0) {
       name = 'Group ' + groupRepository.getNextId().value;
     }
-    const createdGroup = getGroupRepository().create(name, actorsToAdd.map(a => a.id));
-    setAllGroups([...allGroups, createdGroup]);
-    setJumpedGroupId(createdGroup.id);
+    createGroup(name, actorsToAdd.map(a => a.id), [allGroups, setAllGroups], [jumpedGroupId, setJumpedGroupId]);
   }
 
   const createActorView = (actor: Actor) => (
-    <View key={actorIdToString(actor.id)} style={styles.actorView}>
+    <View key={actor.id.toString()} style={styles.actorView}>
       <View style={styles.actorIconView}>
         { actor.icon && <Avatar.Image source={{uri: actor.icon}} size={48}/> }
       </View>
@@ -73,7 +71,7 @@ export default function CreateGroupScreen() {
         <Text>{actor.name} ({actor.handle})</Text>
       </View>
       <View style={styles.actorRemoveView}>
-        <Button mode="text" style={styles.actorRemoveButton} onPress={() => removeActor(actor.id)}>Remove</Button>
+        <Button mode="text" style={styles.actorRemoveButton} onPress={() => removeActorHandler(actor.id)}>Remove</Button>
       </View>
     </View>
   );
@@ -100,7 +98,7 @@ export default function CreateGroupScreen() {
         placeholder="Enter a handle"
         autoCapitalize='none'
       />
-      <Button mode="contained" onPress={addActor} style={styles.addButton}>Add</Button>
+      <Button mode="contained" onPress={addActorHandler} style={styles.addButton}>Add</Button>
       { activityPubActorViews.length > 0 && (
         <View style={styles.actorListView}>
           <Text variant="titleSmall" style={styles.actorListViewHeader}>ActivityPub</Text>
@@ -113,7 +111,7 @@ export default function CreateGroupScreen() {
           { atProtoActorViews }
         </View>
       )}
-      { actorsToAdd.length > 0 && <Button mode="contained" onPress={createGroup}>Create Group</Button> }
+      { actorsToAdd.length > 0 && <Button mode="contained" onPress={createGroupHandler}>Create Group</Button> }
       <Portal>
         <Snackbar
           visible={actorFetchErrorSnackbarVisible}

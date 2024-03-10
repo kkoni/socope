@@ -60,7 +60,7 @@ export class ActorRepository {
 
   private convertActivityPubActor(actor: ActivityPubActor): Actor {
     return {
-      id: { snsType: SNSTypes.ActivityPub, value: actor.id },
+      id: new ActorId(SNSTypes.ActivityPub, actor.id),
       uri: actor.url,
       name: actor.name,
       handle: getHandle(actor),
@@ -70,7 +70,7 @@ export class ActorRepository {
 
   private convertATProtoActor(actor: ProfileViewDetailed): Actor {
     return {
-      id: { snsType: SNSTypes.ATProto, value: actor.did },
+      id: new ActorId(SNSTypes.ATProto, actor.did),
       uri: `https://bsky.app/profile/${actor.handle}`,
       name: actor.displayName || actor.handle,
       handle: actor.handle,
@@ -118,6 +118,6 @@ export class GroupRepository {
     if (this.list.length >= 1) {
       nextId = Math.max(...this.list.map((group) => group.id.value)) + 1;
     }
-    return { value: nextId };
+    return new GroupId(nextId);
   }
 }
