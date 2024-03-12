@@ -60,6 +60,9 @@ export default function CreateGroupScreen() {
       name = 'Group ' + groupRepository.getNextId().value;
     }
     createGroup(name, actorsToAdd.map(a => a.id), [allGroups, setAllGroups], [jumpedGroupId, setJumpedGroupId]);
+    setGroupName('');
+    setHandle('');
+    setActorsToAdd([]);
   }
 
   const createActorView = (actor: Actor) => (

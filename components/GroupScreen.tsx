@@ -1,6 +1,7 @@
-import { useEffect } from 'react';
+import { useCallback } from 'react';
 import { useRecoilState } from 'recoil';
 import { Text } from 'react-native-paper';
+import { useFocusEffect } from '@react-navigation/native';
 import { selectedGroupIdState } from '../states';
 import { Group } from '../model/data';
 
@@ -12,12 +13,10 @@ type Props = {
 export default function GroupScreen(props: Props) {
   const [ _, setSelectedGroupId ] = useRecoilState(selectedGroupIdState);
 
-  useEffect(() => {
-    const unsubscribe = props.navigation.addListener('focus', () => {
-      setSelectedGroupId(props.group.id);
-    });
-    return unsubscribe;
-  }, [ props.navigation ]);
+  useFocusEffect(() => {
+    setSelectedGroupId(props.group.id);
+    return () => {};
+  });
 
   return (
     <Text>{props.group.name}</Text>

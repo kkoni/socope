@@ -2,9 +2,10 @@ import { useState, useEffect } from 'react';
 import { useRecoilState } from 'recoil';
 import { StyleSheet, View } from 'react-native';
 import { Avatar, Button, Portal, Snackbar, Text, TextInput } from 'react-native-paper';
+import { useNavigation } from '@react-navigation/native';
 import deepEqual from 'deep-equal';
-import { selectedGroupIdState, allGroupsState } from '../states';
-import { updateGroup } from '../facades';
+import { selectedGroupIdState, allGroupsState, jumpedGroupIdState } from '../states';
+import { updateGroup, deleteGroup } from '../facades';
 import { Actor, ActorId, Group, SNSTypes } from '../model/data';
 import { getActorRepository, getGroupRepository } from '../model/repositories';
 
@@ -14,7 +15,7 @@ export default function GroupDetailScreen() {
   const [ actors, setActors ] = useState<Map<string, Actor>>(new Map());
   const [ inEditMode, setInEditMode ] = useState<boolean>(false);
 
-  useEffect(() => { reloadGroup(); }, [selectedGroupId]);
+  useEffect(() => { reloadGroup() }, [selectedGroupId]);
 
   const reloadGroup = async () => {
     if (selectedGroupId !== undefined) {
@@ -89,6 +90,22 @@ type GroupDetailViewProps = {
 };
 
 function GroupDetailView(props: GroupDetailViewProps) {
+  const navigation: any = useNavigation();
+
+  const [ allGroups, setAllGroups ] = useRecoilState(allGroupsState);
+  const [ jumpedGroupId, setJumpedGroupId ] = useRecoilState(jumpedGroupIdState);
+  const [ selectedGroupId, setSelectedGroupId ] = useRecoilState(selectedGroupIdState);
+
+  const deleteGroupHandler = () => {
+    deleteGroup(
+      props.group.id,
+      [allGroups, setAllGroups],
+      [jumpedGroupId, setJumpedGroupId],
+      [selectedGroupId, setSelectedGroupId],
+    );
+    navigation.navigate('Home');
+  };
+
   const createActorView = (actorId: ActorId, actor: Actor|undefined) => (
     <View key={actorId.toString()} style={groupDetailStyles.actorView}>
       { actor?.icon &&
@@ -120,6 +137,7 @@ function GroupDetailView(props: GroupDetailViewProps) {
     <View>
       <View style={groupDetailStyles.editButtonsView}>
         <Button mode="contained" onPress={props.openEditorHandler}>Edit</Button>
+        <Button mode="contained" onPress={deleteGroupHandler}>Delete</Button>
       </View>
       <Text>{ props.group.name }</Text>
       { activityPubActorViews.length > 0 && (

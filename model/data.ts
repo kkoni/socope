@@ -55,6 +55,10 @@ export class PostId {
   toString(): string {
     return `${this.snsType}:${this.value}`;
   }
+
+  equals(other: PostId): boolean {
+    return deepEqual(this, other);
+  }
 }
 
 export interface Post {
