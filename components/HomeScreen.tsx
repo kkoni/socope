@@ -1,5 +1,7 @@
 import { useEffect } from 'react';
 import { useRecoilState } from 'recoil';
+import { Text, View } from 'react-native';
+import { Button } from 'react-native-paper';
 import { createMaterialTopTabNavigator } from '@react-navigation/material-top-tabs';
 import { allGroupsState, jumpedGroupIdState } from '../states';
 import GroupScreen from './GroupScreen';
@@ -16,6 +18,15 @@ export default function HomeScreen({navigation}: {navigation: any}) {
       navigation.navigate('Group' + jumpedGroupId.value);
     }
   }, [ jumpedGroupId ]);
+
+  if (allGroups.length === 0) {
+    return (
+      <View>
+        <Text>Welcome to Soccet!</Text>
+        <Button onPress={() => navigation.navigate('Create a Group')}>Create a Group</Button>
+      </View>
+    );
+  }
 
   const tabScreens = allGroups.map(group => (
     <Tab.Screen key={group.id.toString()} name={"Group" + group.id.value} options={{tabBarLabel: group.name}}>

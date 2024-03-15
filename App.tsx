@@ -13,7 +13,6 @@ import {
   DefaultTheme as NavigationDefaultTheme,
 } from '@react-navigation/native';
 import { createDrawerNavigator } from '@react-navigation/drawer';
-import { createStackNavigator } from '@react-navigation/stack';
 import CreateGroupScreen from './components/CreateGroupScreen';
 import HomeScreen from './components/HomeScreen';
 import GroupDetailScreen from './components/GroupDetailScreen';
@@ -33,7 +32,6 @@ const CombinedLightTheme = {
 };
 
 const Drawer = createDrawerNavigator();
-const Stack = createStackNavigator();
 
 export default function App() {
   return (
@@ -51,23 +49,11 @@ export default function App() {
 export function AppContainer() {
   const [ allGroups ] = useRecoilState(allGroupsState);
 
-  if (allGroups.length === 0) {
-    return (
-      <Stack.Navigator>
-        <Stack.Screen name="Create a Group" component={CreateGroupScreen}/>
-      </Stack.Navigator>
-    );
-  } else {
-    return MainContainer();
-  }
-}
-
-export function MainContainer() {
   return (
     <Drawer.Navigator screenOptions={{headerShown: true}}>
       <Drawer.Screen name="Home" options={{headerTitle: 'Soccet'}} component={HomeScreen}/>
-      <Drawer.Screen name="Create a Gruop" component={CreateGroupScreen}/>
-      <Drawer.Screen name="Group Detail" component={GroupDetailScreen}/>
+      <Drawer.Screen name="Create a Group" component={CreateGroupScreen}/>
+      { allGroups.length >= 1 && <Drawer.Screen name="Group Detail" component={GroupDetailScreen}/> }
     </Drawer.Navigator>
   );
 }

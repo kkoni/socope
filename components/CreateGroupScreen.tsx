@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { useRecoilState } from 'recoil';
 import { Avatar, Button, Portal, Snackbar, Text, TextInput } from 'react-native-paper';
+import { useNavigation } from '@react-navigation/native';
 import { allGroupsState, jumpedGroupIdState } from '../states';
 import { createGroup } from '../facades';
 import { Actor, ActorId, SNSTypes } from '../model/data';
@@ -10,6 +11,7 @@ import { getActorRepository, getGroupRepository } from '../model/repositories';
 export default function CreateGroupScreen() {
   const [ allGroups, setAllGroups ] = useRecoilState(allGroupsState);
   const [ jumpedGroupId, setJumpedGroupId ] = useRecoilState(jumpedGroupIdState);
+  const navigation: any = useNavigation();
 
   const [ groupName, setGroupName ] = useState<string>('');
   const [ handle, setHandle ] = useState<string>('');
@@ -63,6 +65,7 @@ export default function CreateGroupScreen() {
     setGroupName('');
     setHandle('');
     setActorsToAdd([]);
+    navigation.navigate('Home');
   }
 
   const createActorView = (actor: Actor) => (
