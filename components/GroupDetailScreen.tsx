@@ -19,7 +19,7 @@ export default function GroupDetailScreen() {
 
   const reloadGroup = async () => {
     if (selectedGroupId !== undefined) {
-      const group = getGroupRepository().get(selectedGroupId);
+      const group = await (await getGroupRepository()).get(selectedGroupId);
       setActors(new Map());
       setGroup(group);
 
@@ -96,8 +96,8 @@ function GroupDetailView(props: GroupDetailViewProps) {
   const [ jumpedGroupId, setJumpedGroupId ] = useRecoilState(jumpedGroupIdState);
   const [ selectedGroupId, setSelectedGroupId ] = useRecoilState(selectedGroupIdState);
 
-  const deleteGroupHandler = () => {
-    deleteGroup(
+  const deleteGroupHandler = async () => {
+    await deleteGroup(
       props.group.id,
       [allGroups, setAllGroups],
       [jumpedGroupId, setJumpedGroupId],
@@ -265,7 +265,7 @@ function GroupEditorView(props: GroupEditorViewProps) {
       name: groupName,
       actorIds: actorIds,
     };
-    updateGroup(updatedGroup, [allGroups, setAllGroups]);
+    await updateGroup(updatedGroup, [allGroups, setAllGroups]);
     props.updateGroupHandler();
   };
 

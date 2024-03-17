@@ -56,12 +56,12 @@ export default function CreateGroupScreen() {
   }
 
   const createGroupHandler = async () => {
-    const groupRepository = getGroupRepository();
+    const groupRepository = await getGroupRepository();
     let name = groupName.trim();
     if (name.length === 0) {
-      name = 'Group ' + groupRepository.getNextId().value;
+      name = 'Group ' + (await groupRepository.getNextId()).value;
     }
-    createGroup(name, actorsToAdd.map(a => a.id), [allGroups, setAllGroups], [jumpedGroupId, setJumpedGroupId]);
+    await createGroup(name, actorsToAdd.map(a => a.id), [allGroups, setAllGroups], [jumpedGroupId, setJumpedGroupId]);
     setGroupName('');
     setHandle('');
     setActorsToAdd([]);

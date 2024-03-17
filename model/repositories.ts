@@ -2,7 +2,17 @@ import { ProfileViewDetailed } from '@atproto/api/dist/client/types/app/bsky/act
 import { Actor as ActivityPubActor, getHandle, handleToAcctUri } from './activity-pub/data';
 import { getActorRepository as getActivityPubActorRepository } from './activity-pub/repositories';
 import { getActorRepository as getATProtoActorRepository } from './atproto/repositories';
-import { Actor, ActorId, Group, GroupId, SNSType, SNSTypes } from './data';
+import { LongLivedDataStorage, StorageManager, getStorageManager } from './lib/storage';
+import {
+  Actor,
+  ActorId,
+  Group,
+  GroupId,
+  SNSType,
+  SNSTypes,
+  serializeGroup,
+  deserializeGroup
+} from './data';
 
 interface Singletons {
   actorRepository: ActorRepository;
@@ -18,9 +28,11 @@ export function getActorRepository(): ActorRepository {
   return singletons.actorRepository;
 }
 
-export function getGroupRepository(): GroupRepository {
+export async function getGroupRepository(): Promise<GroupRepository> {
   if (!singletons.groupRepository) {
-    singletons.groupRepository = new GroupRepository();
+    const storageManager = await getStorageManager();
+    singletons.groupRepository = new GroupRepository(storageManager);
+    await singletons.groupRepository.load();
   }
   return singletons.groupRepository;
 }
@@ -80,44 +92,58 @@ export class ActorRepository {
 }
 
 export class GroupRepository {
-  private list: Group[] = [];
+  private static storageKeyPrefix = 'GroupRepository.storage';
+  private static nextIdStorageKey = 'GroupRepository.nextId';
 
-  create(name: string, actorIds: ActorId[]): Group {
-    const newGroup: Group = {
-      id: this.getNextId(),
-      name,
-      actorIds,
-    };
-    this.store(newGroup);
+  private nextId: GroupId|undefined;
+  private storageManager: StorageManager;
+  private longLivedDataStorage: LongLivedDataStorage<Group>;
+
+  constructor(storageManager: StorageManager) {
+    this.storageManager = storageManager;
+    this.longLivedDataStorage = new LongLivedDataStorage(
+      GroupRepository.storageKeyPrefix,
+      this.storageManager,
+      serializeGroup,
+      deserializeGroup,
+    );
+  }
+
+  async load(): Promise<void> {
+    await this.longLivedDataStorage.load();
+    const loadedNextId = await this.storageManager.getLongLivedData(GroupRepository.nextIdStorageKey);
+    if (loadedNextId !== undefined) {
+      this.nextId = new GroupId(parseInt(loadedNextId, 10));
+    }
+  }
+
+  async create(name: string, actorIds: ActorId[]): Promise<Group> {
+    const newId = this.nextId || new GroupId(1);
+    this.nextId = new GroupId(newId.value + 1);
+    await this.storageManager.storeLongLivedData(GroupRepository.nextIdStorageKey, this.nextId.value.toString());
+
+    const newGroup: Group = { id: newId, name, actorIds };
+    await this.store(newGroup);
     return newGroup;
   }
 
-  store(group: Group): void {
-    const index = this.list.findIndex((g) => g.id.value === group.id.value);
-    if (index === -1) {
-      this.list.push(group);
-    } else {
-      this.list[index] = group;
-    }
+  async store(group: Group): Promise<void> {
+    await this.longLivedDataStorage.store(group.id.value.toString(), group);
   }
 
-  delete(id: GroupId): void {
-    this.list = this.list.filter((group) => group.id.value !== id.value);
+  async delete(id: GroupId): Promise<void> {
+    await this.longLivedDataStorage.delete(id.value.toString());
   }
 
-  get(id: GroupId): Group | undefined {
-    return this.list.find((group) => group.id.value === id.value);
+  async get(id: GroupId): Promise<Group | undefined> {
+    return await this.longLivedDataStorage.get(id.value.toString());
   }
 
-  getAll(): Group[] {
-    return this.list;
+  async getAll(): Promise<Group[]> {
+    return await this.longLivedDataStorage.getAll();
   }
 
-  getNextId(): GroupId {
-    let nextId = 1;
-    if (this.list.length >= 1) {
-      nextId = Math.max(...this.list.map((group) => group.id.value)) + 1;
-    }
-    return new GroupId(nextId);
+  async getNextId(): Promise<GroupId> {
+    return this.nextId || new GroupId(1);
   }
 }

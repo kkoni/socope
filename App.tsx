@@ -1,5 +1,6 @@
 import 'fast-text-encoding';
 import 'react-native-url-polyfill/auto';
+import { useEffect } from 'react';
 import { RecoilRoot, useRecoilState } from 'recoil';
 import { StatusBar } from 'expo-status-bar';
 import {
@@ -17,6 +18,7 @@ import CreateGroupScreen from './components/CreateGroupScreen';
 import HomeScreen from './components/HomeScreen';
 import GroupDetailScreen from './components/GroupDetailScreen';
 import { allGroupsState } from './states';
+import { getGroupRepository } from './model/repositories';
 
 const { LightTheme } = adaptNavigationTheme({
   reactNavigationLight: NavigationDefaultTheme,
@@ -47,7 +49,11 @@ export default function App() {
 }
 
 export function AppContainer() {
-  const [ allGroups ] = useRecoilState(allGroupsState);
+  const [ allGroups, setAllGroups ] = useRecoilState(allGroupsState);
+
+  useEffect(() => {(async () => {
+    setAllGroups(await (await getGroupRepository()).getAll())
+  })()}, []);
 
   return (
     <Drawer.Navigator screenOptions={{headerShown: true}}>
