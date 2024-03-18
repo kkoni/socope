@@ -1,5 +1,7 @@
 import { BskyAgent, stringifyLex, jsonToLex } from '@atproto/api';
 import { ProfileViewDetailed } from '@atproto/api/dist/client/types/app/bsky/actor/defs';
+import { Cache, CachedStorage, EphemeralDataStorage, StorageManager, getStorageManager } from '../lib/storage';
+import { serializeProfile, deserializeProfile } from './data';
 
 interface Singletons {
   bskyAgent?: BskyAgent;
@@ -16,25 +18,53 @@ function getBskyAgent(): BskyAgent {
   return singletons.bskyAgent;
 }
 
-export function getActorRepository(): ActorRepository {
+export async function getActorRepository(): Promise<ActorRepository> {
   if (!singletons.actorRepository) {
-    singletons.actorRepository = new ActorRepository();
+    const storageManager = await getStorageManager();
+    singletons.actorRepository = new ActorRepository(storageManager);
   }
   return singletons.actorRepository;
 }
 
 export class ActorRepository {
+  private static storageKeyPrefix = 'activity-pub.ActorRepository.storage';
+  private static storageTTL = 60 * 60 * 24 * 2;
+  private static cacheTTL = 60 * 60 * 24;
+  private static cacheMaxKeys = 100000;
+
+  private storage: CachedStorage<ProfileViewDetailed>;
+
+  constructor(storageManager: StorageManager) {
+    this.storage = new CachedStorage(
+      new EphemeralDataStorage(
+        ActorRepository.storageKeyPrefix,
+        ActorRepository.storageTTL,
+        storageManager,
+        serializeProfile,
+        deserializeProfile,
+      ),
+      new Cache(
+        ActorRepository.cacheTTL,
+        ActorRepository.cacheMaxKeys,
+        serializeProfile,
+        deserializeProfile,
+      )
+    );
+  }
+
   async fetch(id: string): Promise<ProfileViewDetailed|undefined> {
     try {
       const agent = getBskyAgent();
       const response = await agent.getProfile({actor: id});
       if (response.success) {
+        this.storage.store(id, response.data);
         return response.data;
       } else {
         throw new Error('BlueSky getProfile error: unknown');
       }
     } catch(e: any) {
       if (e.status === 400 && e.message === 'Profile not found') {
+        this.storage.store(id, undefined);
         return undefined;
       } else {
         throw e;
@@ -43,6 +73,10 @@ export class ActorRepository {
   }
 
   async get(id: string): Promise<ProfileViewDetailed|undefined> {
+    const cached = await this.storage.get(id);
+    if (cached !== undefined) {
+      return cached.value;
+    }
     return await this.fetch(id);
   }
 }

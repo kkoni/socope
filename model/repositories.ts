@@ -51,10 +51,10 @@ export class ActorRepository {
         if (acctUri === undefined) {
           return undefined;
         }
-        const activityPubActor = await getActivityPubActorRepository().fetchByAcctUri(acctUri);
+        const activityPubActor = await (await getActivityPubActorRepository()).fetchByAcctUri(acctUri);
         return activityPubActor ? this.convertActivityPubActor(activityPubActor) : undefined;
       case SNSTypes.ATProto:
-        const atProtoActor = await getATProtoActorRepository().fetch(handle);
+        const atProtoActor = await (await getATProtoActorRepository()).fetch(handle);
         return atProtoActor ? this.convertATProtoActor(atProtoActor) : undefined;
     }
   }
@@ -62,10 +62,10 @@ export class ActorRepository {
   async get(id: ActorId): Promise<Actor|undefined> {
     switch (id.snsType) {
       case SNSTypes.ActivityPub:
-        const activityPubActor = await getActivityPubActorRepository().get(id.value);
+        const activityPubActor = await (await getActivityPubActorRepository()).get(id.value);
         return activityPubActor ? this.convertActivityPubActor(activityPubActor) : undefined;
       case SNSTypes.ATProto:
-        const atProtoActor = await getATProtoActorRepository().get(id.value);
+        const atProtoActor = await (await getATProtoActorRepository()).get(id.value);
         return atProtoActor ? this.convertATProtoActor(atProtoActor) : undefined;
     }
   }

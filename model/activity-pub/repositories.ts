@@ -1,7 +1,8 @@
 import jp from 'jsonpath';
 import jsonld from 'jsonld';
 import http from '../lib/http';
-import { Actor, AcctUri } from './data';
+import { Cache, CachedStorage, EphemeralDataStorage, StorageManager, getStorageManager } from '../lib/storage';
+import { Actor, AcctUri, serializeActor, deserializeActor } from './data';
 
 interface Singletons {
   actorRepository: ActorRepository;
@@ -9,9 +10,10 @@ interface Singletons {
 
 const singletons = {} as Singletons;
 
-export function getActorRepository(): ActorRepository {
+export async function getActorRepository(): Promise<ActorRepository> {
   if (!singletons.actorRepository) {
-    singletons.actorRepository = new ActorRepository();
+    const storageManager = await getStorageManager();
+    singletons.actorRepository = new ActorRepository(storageManager);
   }
   return singletons.actorRepository;
 }
@@ -20,6 +22,31 @@ const asNamespace = "https://www.w3.org/ns/activitystreams#";
 const acceptActivityJsonHeader = {"Accept": "application/activity+json"};
 
 export class ActorRepository {
+  private static storageKeyPrefix = 'activity-pub.ActorRepository.storage';
+  private static storageTTL = 60 * 60 * 24 * 2;
+  private static cacheTTL = 60 * 60 * 24;
+  private static cacheMaxKeys = 100000;
+
+  private storage: CachedStorage<Actor>;
+
+  constructor(storageManager: StorageManager) {
+    this.storage = new CachedStorage(
+      new EphemeralDataStorage(
+        ActorRepository.storageKeyPrefix,
+        ActorRepository.storageTTL,
+        storageManager,
+        serializeActor,
+        deserializeActor,
+      ),
+      new Cache(
+        ActorRepository.cacheTTL,
+        ActorRepository.cacheMaxKeys,
+        serializeActor,
+        deserializeActor,
+      )
+    );
+  }
+
   async fetchByAcctUri(acctUri: AcctUri): Promise<Actor|undefined> {
     const id = await this.fetchActorIdByAcctUri(acctUri);
     return id ? await this.fetch(id) : undefined;
@@ -58,6 +85,7 @@ export class ActorRepository {
     try {
       const response = await http.get(id, acceptActivityJsonHeader);
       if (response.status === 404) {
+        this.storage.store(id, undefined);
         return undefined;
       } else if (response.status !== 200) {
         throw new Error('ActivityPub get Actor error: ' + response.status);
@@ -65,11 +93,13 @@ export class ActorRepository {
       const actor = await parseActor(await response.json());
       if (actor === undefined) {
         console.info(`ActivityPub get actor error: failed to parse actor: id=${id}`);
-        return undefined;
+        return undefined; 
       }
+      this.storage.store(id, actor);
       return actor;
     } catch(e: any) {
       if (e.cause && e.cause.code === 'ENOTFOUND') {
+        this.storage.store(id, undefined);
         return undefined;
       } else {
         throw e;
@@ -78,6 +108,10 @@ export class ActorRepository {
   }
 
   async get(id: string): Promise<Actor|undefined> {
+    const cached = await this.storage.get(id);
+    if (cached !== undefined) {
+      return cached.value;
+    }
     return await this.fetch(id);
   }
 }
