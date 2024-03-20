@@ -6,6 +6,7 @@ import { serializeProfile, deserializeProfile } from './data';
 interface Singletons {
   bskyAgent?: BskyAgent;
   actorRepository?: ActorRepository;
+  followsClient?: FollowsClient;
 }
 
 const singletons = {} as Singletons;
@@ -24,6 +25,13 @@ export async function getActorRepository(): Promise<ActorRepository> {
     singletons.actorRepository = new ActorRepository(storageManager);
   }
   return singletons.actorRepository;
+}
+
+export function getFollowsClient(): FollowsClient {
+  if (!singletons.followsClient) {
+    singletons.followsClient = new FollowsClient();
+  }
+  return singletons.followsClient;
 }
 
 export class ActorRepository {
@@ -78,6 +86,23 @@ export class ActorRepository {
       return cached.value;
     }
     return await this.fetch(id);
+  }
+}
+
+interface FollowsResponse {
+  followedIds: string[];
+  cursor?: string;
+}
+
+export class FollowsClient {
+  async fetch(id: string, cursor?: string): Promise<FollowsResponse> {
+    const agent = getBskyAgent();
+    const response = await agent.getFollows({actor: id, cursor: cursor});
+    if (response.success) {
+      return {followedIds: response.data.follows.map((p) => p.did), cursor: response.data.cursor};
+    } else {
+      throw new Error('BlueSky getFollows error: unknown');
+    }
   }
 }
 

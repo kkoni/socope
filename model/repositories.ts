@@ -2,7 +2,8 @@ import { ProfileViewDetailed } from '@atproto/api/dist/client/types/app/bsky/act
 import { Actor as ActivityPubActor, getHandle, handleToAcctUri } from './activity-pub/data';
 import { getActorRepository as getActivityPubActorRepository } from './activity-pub/repositories';
 import { getActorRepository as getATProtoActorRepository } from './atproto/repositories';
-import { LongLivedDataStorage, StorageManager, getStorageManager } from './lib/storage';
+import { getEpochSeconds } from './lib/util';
+import { EphemeralDataStorage, LongLivedDataStorage, StorageManager, getStorageManager } from './lib/storage';
 import {
   Actor,
   ActorId,
@@ -17,6 +18,7 @@ import {
 interface Singletons {
   actorRepository: ActorRepository;
   groupRepository: GroupRepository;
+  followsRepository: FollowsRepository;
 }
 
 const singletons = {} as Singletons;
@@ -35,6 +37,14 @@ export async function getGroupRepository(): Promise<GroupRepository> {
     await singletons.groupRepository.load();
   }
   return singletons.groupRepository;
+}
+
+export async function getFollowsRepository(): Promise<FollowsRepository> {
+  if (!singletons.followsRepository) {
+    const storageManager = await getStorageManager();
+    singletons.followsRepository = new FollowsRepository(storageManager);
+  }
+  return singletons.followsRepository;
 }
 
 const activityPubHandleRegex = /^[^@]+@[^@]+$/
@@ -145,5 +155,60 @@ export class GroupRepository {
 
   async getNextId(): Promise<GroupId> {
     return this.nextId || new GroupId(1);
+  }
+}
+
+export class FollowsRepository {
+  private static storageKeyPrefix = 'FollowsRepository.storage'
+  private static storageTTL = 60 * 60 * 24 * 7;
+
+  private static serializer(value: string[]): string {
+    return JSON.stringify(value);
+  }
+
+  private static deserializer(s: string): string[] {
+    return JSON.parse(s);
+  }
+
+  private storages: Map<SNSType, EphemeralDataStorage<string[]>>;
+
+  constructor(storageManager: StorageManager) {
+    this.storages = new Map();
+    for (const snsType of Object.values(SNSTypes)) {
+      this.storages.set(snsType, new EphemeralDataStorage(
+        `${FollowsRepository.storageKeyPrefix}.${snsType}`,
+        FollowsRepository.storageTTL,
+        storageManager,
+        FollowsRepository.serializer,
+        FollowsRepository.deserializer,
+      ));
+    }
+  }
+
+  async get(actorId: ActorId): Promise<{followedIds: string[], updatedAt: number}|undefined> {
+    const storage = this.storages.get(actorId.snsType);
+    if (storage === undefined) {
+      return undefined;
+    }
+    const stored = await storage.get(actorId.value);
+    if (stored === undefined) {
+      return undefined;
+    }
+    return {followedIds: stored.value, updatedAt: stored.updatedAt};
+  }
+
+  async getUpdatedAt(actorId: ActorId): Promise<number | undefined> {
+    const storage = this.storages.get(actorId.snsType);
+    if (storage === undefined) {
+      return undefined;
+    }
+    return await storage.getUpdatedAt(actorId.value);
+  }
+
+  async store(actorId: ActorId, followedIds: string[]): Promise<void> {
+    const storage = this.storages.get(actorId.snsType);
+    if (storage !== undefined) {
+      await storage.store(actorId.value, followedIds, getEpochSeconds());
+    }
   }
 }

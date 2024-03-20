@@ -66,3 +66,46 @@ export function serializeActor(actor: Actor): string {
 export function deserializeActor(s: string): Actor|undefined {
   return serializableObjectToActor(JSON.parse(s));
 }
+
+export interface ASObject {
+  id: string;
+  type: string;
+  published?: Date;
+  url?: string;
+  mediaType?: string;
+  content?: string;
+  attributedTo?: string;
+  inReplyTo?: string;
+  attachment?: ASObject[];
+}
+
+export interface Note extends ASObject {}
+
+export interface Document extends ASObject {
+  width?: number;
+  height?: number;
+}
+
+export interface Activity extends ASObject {
+  actor: string;
+  object: string|ASObject;
+}
+
+export interface Create extends Activity {}
+
+export interface Announce extends Activity {}
+
+export interface OrderedCollection {
+  id: string;
+  totalItems: number;
+  first: string;
+  last?: string;
+}
+
+export interface OrderedCollectionPage {
+  id: string;
+  partOf: string;
+  next: string;
+  prev: string;
+  items: (ASObject|string)[];
+}

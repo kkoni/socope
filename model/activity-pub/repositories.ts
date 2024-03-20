@@ -2,10 +2,23 @@ import jp from 'jsonpath';
 import jsonld from 'jsonld';
 import http from '../lib/http';
 import { Cache, CachedStorage, EphemeralDataStorage, StorageManager, getStorageManager } from '../lib/storage';
-import { Actor, AcctUri, serializeActor, deserializeActor } from './data';
+import {
+  Actor,
+  AcctUri,
+  Announce,
+  ASObject,
+  Create,
+  Document,
+  Note,
+  OrderedCollection,
+  OrderedCollectionPage,
+  serializeActor,
+  deserializeActor
+} from './data';
 
 interface Singletons {
   actorRepository: ActorRepository;
+  followingClient: FollowingClient;
 }
 
 const singletons = {} as Singletons;
@@ -16,6 +29,13 @@ export async function getActorRepository(): Promise<ActorRepository> {
     singletons.actorRepository = new ActorRepository(storageManager);
   }
   return singletons.actorRepository;
+}
+
+export function getFollowingClient(): FollowingClient {
+  if (!singletons.followingClient) {
+    singletons.followingClient = new FollowingClient();
+  }
+  return singletons.followingClient;
 }
 
 const asNamespace = "https://www.w3.org/ns/activitystreams#";
@@ -116,6 +136,47 @@ export class ActorRepository {
   }
 }
 
+export class FollowingClient {
+  async fetchFirstPageUri(followingUri: string): Promise<string|undefined> {
+    try {
+      const response = await http.get(followingUri, acceptActivityJsonHeader);
+      if (400 <= response.status && response.status < 500) {
+        return undefined;
+      } else if (response.status !== 200) {
+        throw new Error('ActivityPub get Following error: ' + response.status);
+      }
+      const json = await response.json();
+      const orderedCollection = await parseOrderedCollection(json);
+      return orderedCollection?.first;
+    } catch(e: any) {
+      if (e.cause && e.cause.code === 'ENOTFOUND') {
+        return undefined;
+      } else {
+        throw e;
+      }
+    }
+  }
+
+  async fetchPage(pageUri: string): Promise<OrderedCollectionPage|undefined> {
+    try {
+      const response = await http.get(pageUri, acceptActivityJsonHeader);
+      if (400 <= response.status && response.status < 500) {
+        return undefined;
+      } else if (response.status !== 200) {
+        throw new Error('ActivityPub get Following error: ' + response.status);
+      }
+      const json = await response.json();
+      return await parseOrderedCollectionPage(json);
+    } catch(e: any) {
+      if (e.cause && e.cause.code === 'ENOTFOUND') {
+        return undefined;
+      } else {
+        throw e;
+      }
+    }
+  }
+}
+
 function asProperty(name: string): string {
   return asNamespace + name;
 }
@@ -136,4 +197,139 @@ async function parseActor(json: any): Promise<Actor|undefined> {
     return undefined;
   }
   return {id, url, name, following, outbox, preferredUsername, summary, icon: iconUrl};
+}
+
+async function parseOrderedCollection(json: any): Promise<OrderedCollection|undefined> {
+  const expanded: any = (await jsonld.expand(json))[0];
+  const type = expanded['@type']?.[0];
+  if (type !== asProperty('OrderedCollection')) {
+    return undefined;
+  }
+  const id = expanded['@id'];
+  const totalItems = expanded[asProperty('totalItems')]?.[0]?.['@value'];
+  const first = expanded[asProperty('first')]?.[0]?.['@id'];
+  const last = expanded[asProperty('last')]?.[0]?.['@id'];
+  if (id === undefined || totalItems === undefined || first === undefined) {
+    return undefined;
+  }
+  return {id, totalItems, first, last};
+}
+
+async function parseOrderedCollectionPage(json: any): Promise<OrderedCollectionPage|undefined> {
+  function readItem(item: any): ASObject|string|undefined {
+    const type = item['@type']?.[0];
+    if (type === undefined) {
+      if (item['@id'] !== undefined && typeof item['@id'] === 'string') {
+        return item['@id'];
+      } else {
+        return undefined;
+      }
+    } else {
+      return readObject(item);
+    }
+  }
+
+  const expanded: any = (await jsonld.expand(json))[0];
+  const type = expanded['@type']?.[0];
+  if (type !== asProperty('OrderedCollectionPage')) {
+    return undefined;
+  }
+  const id = expanded['@id'];
+  const partOf = expanded[asProperty('partOf')]?.[0]?.['@id'];
+  const next = expanded[asProperty('next')]?.[0]?.['@id'];
+  const prev = expanded[asProperty('prev')]?.[0]?.['@id'];
+  const items = expanded[asProperty('items')]?.[0]?.['@list']?.map(readItem).filter((o: ASObject|string|undefined) => o !== undefined) ?? [];
+  return {id, partOf, next, prev, items};
+}
+
+function readObject(obj: any): ASObject|undefined {
+  const type = obj['@type']?.[0];
+  if (type === asProperty('Note')) {
+    return readNote(obj);
+  } else if (type === asProperty('Document')) {
+    return readDocument(obj);
+  } else if (type === asProperty('Create')) {
+    return readCreate(obj);
+  } else if (type === asProperty('Announce')) {
+    return readAnnounce(obj);
+  } else {  
+    return undefined;
+  }
+}
+
+function readNote(obj: any): Note|undefined {
+  const type = obj['@type']?.[0];
+  if (type !== asProperty('Note')) {
+    return undefined;
+  }
+  const id = obj['@id'];
+  const published = obj[asProperty('published')]?.[0]?.['@value'];
+  const url = obj[asProperty('url')]?.[0]?.['@id'];
+  const attributedTo = obj[asProperty('attributedTo')]?.[0]?.['@id'];
+  const content = obj[asProperty('content')]?.[0]?.['@value'];
+  const attachment = obj[asProperty('attachment')]?.map(readDocument).filter((d: Document|undefined) => d !== undefined) ?? [];
+  const inReplyTo = obj[asProperty('inReplyTo')]?.[0]?.['@id'];
+  if (id === undefined || published === undefined || url === undefined || attributedTo === undefined || content === undefined) {
+    return undefined;
+  }
+  return {id, type: 'Note', published: new Date(published), url, attributedTo, content, attachment, inReplyTo};
+}
+
+function readDocument(obj: any): Document|undefined {
+  const type = obj['@type']?.[0];
+  if (type !== asProperty('Document')) {
+    return undefined;
+  }
+  const id = obj['@id'] ?? '';
+  const url = obj[asProperty('url')]?.[0]?.['@id'];
+  const mediaType = obj[asProperty('mediaType')]?.[0]?.['@value'];
+  const width = obj[asProperty('width')]?.[0]?.['@value'];
+  const height = obj[asProperty('height')]?.[0]?.['@value'];
+  if (url === undefined || mediaType === undefined) {
+    return undefined;
+  }
+  return {id, type: 'Document', url, mediaType, width, height};
+}
+
+function readCreate(obj: any): Create|undefined {
+  const type = obj['@type']?.[0];
+  if (type !== asProperty('Create')) {
+    return undefined;
+  }
+  const id = obj['@id'];
+  const actor = obj[asProperty('actor')]?.[0]?.['@id'];
+  const object = obj[asProperty('object')]?.[0];
+  if (id === undefined || actor === undefined || object === undefined) {
+    return undefined;
+  }
+  const convertedObject = readObject(object);
+  if (convertedObject === undefined) {
+    return undefined;
+  }
+  return {id, type: 'Create', actor, object: convertedObject};
+}
+
+function readAnnounce(obj: any): Announce|undefined {
+  const type = obj['@type']?.[0];
+  if (type !== asProperty('Announce')) {
+    return undefined;
+  }
+  const id = obj['@id'];
+  const actor = obj[asProperty('actor')]?.[0]?.['@id'];
+  const object = obj[asProperty('object')]?.[0];
+  const objectId = object?.['@id'];
+  if (id === undefined || actor === undefined || objectId === undefined) {
+    return undefined;
+  }
+  let objectOfAnnounce: ASObject|string;
+  if ('@type' in object) {
+    const convertedObject = readObject(object);
+    if (convertedObject === undefined) {
+      return undefined;
+    }
+    objectOfAnnounce = convertedObject;
+  } else {
+    objectOfAnnounce = objectId;
+  }
+  return {id, type: 'Announce', actor, object: objectOfAnnounce};
 }
