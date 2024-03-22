@@ -300,3 +300,60 @@ export function serializeGroup(group: Group): string {
 export function deserializeGroup(s: string): Group|undefined {
   return serializableObjectToGroup(JSON.parse(s));
 }
+
+export interface Neighbors {
+  closeNeighbors: Neighbor[];
+  farNeighbors: Neighbor[];
+}
+
+export interface Neighbor {
+  actorId: ActorId;
+  referenceCount: number;
+}
+
+function neighborsToSerializableObject(neighbors: Neighbors): any {
+  return {
+    closeNeighbors: neighbors.closeNeighbors.map(neighborToSerializableObject),
+    farNeighbors: neighbors.farNeighbors.map(neighborToSerializableObject),
+  };
+}
+
+function neighborToSerializableObject(neighbor: Neighbor): any {
+  return {
+    actorId: actorIdToSerializableObject(neighbor.actorId),
+    referenceCount: neighbor.referenceCount,
+  };
+}
+
+function serializableObjectToNeighbors(obj: any): Neighbors|undefined {
+  if (obj && obj.closeNeighbors && obj.farNeighbors) {
+    const closeNeighbors = obj.closeNeighbors.map(serializableObjectToNeighbor).filter((neighbor: any) => neighbor !== undefined) as Neighbor[];
+    const farNeighbors = obj.farNeighbors.map(serializableObjectToNeighbor).filter((neighbor: any) => neighbor !== undefined) as Neighbor[];
+    return {
+      closeNeighbors,
+      farNeighbors,
+    };
+  }
+  return undefined;
+}
+
+function serializableObjectToNeighbor(obj: any): Neighbor|undefined {
+  if (obj && obj.actorId && obj.referenceCount) {
+    const actorId = serializableObjectToActorId(obj.actorId);
+    if (actorId) {
+      return {
+        actorId,
+        referenceCount: obj.referenceCount,
+      };
+    }
+  }
+  return undefined;
+}
+
+export function serializeNeighbors(neighbors: Neighbors): string {
+  return JSON.stringify(neighborsToSerializableObject(neighbors));
+}
+
+export function deserializeNeighbors(s: string): Neighbors|undefined {
+  return serializableObjectToNeighbors(JSON.parse(s));
+}

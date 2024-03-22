@@ -9,10 +9,14 @@ import {
   ActorId,
   Group,
   GroupId,
+  Neighbor,
+  Neighbors,
   SNSType,
   SNSTypes,
   serializeGroup,
-  deserializeGroup
+  deserializeGroup,
+  serializeNeighbors,
+  deserializeNeighbors,
 } from './data';
 
 interface Singletons {
@@ -210,5 +214,36 @@ export class FollowsRepository {
     if (storage !== undefined) {
       await storage.store(actorId.value, followedIds, getEpochSeconds());
     }
+  }
+}
+
+export class NeighborsRepository {
+  private static storageKeyPrefix = 'NeighborsRepository.storage';
+
+  private storage: LongLivedDataStorage<Neighbors>;
+
+  constructor(storageManager: StorageManager) {
+    this.storage = new LongLivedDataStorage(
+      NeighborsRepository.storageKeyPrefix,
+      storageManager,
+      serializeNeighbors,
+      deserializeNeighbors,
+    );
+  }
+
+  async load(): Promise<void> {
+    await this.storage.load();
+  }
+
+  async store(groupId: GroupId, neighbors: Neighbors): Promise<void> {
+    await this.storage.store(groupId.toString(), neighbors);
+  }
+
+  async get(groupId: GroupId): Promise<Neighbors|undefined> {
+    return await this.storage.get(groupId.toString());
+  }
+
+  async delete(groupId: GroupId): Promise<void> {
+    await this.storage.delete(groupId.toString());
   }
 }
