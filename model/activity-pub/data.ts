@@ -105,7 +105,7 @@ export interface OrderedCollection {
 export interface OrderedCollectionPage {
   id: string;
   partOf: string;
-  next: string;
-  prev: string;
+  next?: string;
+  prev?: string;
   items: (ASObject|string)[];
 }

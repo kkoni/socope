@@ -36,6 +36,18 @@ export class ActorId {
   }
 }
 
+export function parseActorId(s: string): ActorId|undefined {
+  const colonIndex = s.indexOf(":");
+  if (colonIndex === -1) {
+    return undefined;
+  }
+  const snsType = parseSNSType(s.substring(0, colonIndex));
+  if (!snsType) {
+    return undefined;
+  }
+  return new ActorId(snsType, s.substring(colonIndex + 1));
+}
+
 function actorIdToSerializableObject(id: ActorId): any {
   return {
     snsType: id.snsType,
@@ -308,7 +320,7 @@ export interface Neighbors {
 
 export interface Neighbor {
   actorId: ActorId;
-  referenceCount: number;
+  followCount: number;
 }
 
 function neighborsToSerializableObject(neighbors: Neighbors): any {
@@ -321,7 +333,7 @@ function neighborsToSerializableObject(neighbors: Neighbors): any {
 function neighborToSerializableObject(neighbor: Neighbor): any {
   return {
     actorId: actorIdToSerializableObject(neighbor.actorId),
-    referenceCount: neighbor.referenceCount,
+    followCount: neighbor.followCount,
   };
 }
 
@@ -338,12 +350,12 @@ function serializableObjectToNeighbors(obj: any): Neighbors|undefined {
 }
 
 function serializableObjectToNeighbor(obj: any): Neighbor|undefined {
-  if (obj && obj.actorId && obj.referenceCount) {
+  if (obj && obj.actorId && obj.followCount) {
     const actorId = serializableObjectToActorId(obj.actorId);
     if (actorId) {
       return {
         actorId,
-        referenceCount: obj.referenceCount,
+        followCount: obj.followCount,
       };
     }
   }

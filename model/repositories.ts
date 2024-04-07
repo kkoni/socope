@@ -23,6 +23,7 @@ interface Singletons {
   actorRepository: ActorRepository;
   groupRepository: GroupRepository;
   followsRepository: FollowsRepository;
+  neighborsRepository: NeighborsRepository;
 }
 
 const singletons = {} as Singletons;
@@ -49,6 +50,15 @@ export async function getFollowsRepository(): Promise<FollowsRepository> {
     singletons.followsRepository = new FollowsRepository(storageManager);
   }
   return singletons.followsRepository;
+}
+
+export async function getNeighborsRepository(): Promise<NeighborsRepository> {
+  if (!singletons.neighborsRepository) {
+    const storageManager = await getStorageManager();
+    singletons.neighborsRepository = new NeighborsRepository(storageManager);
+    await singletons.neighborsRepository.load();
+  }
+  return singletons.neighborsRepository;
 }
 
 const activityPubHandleRegex = /^[^@]+@[^@]+$/
@@ -189,7 +199,7 @@ export class FollowsRepository {
     }
   }
 
-  async get(actorId: ActorId): Promise<{followedIds: string[], updatedAt: number}|undefined> {
+  async get(actorId: ActorId): Promise<{followedIds: ActorId[], updatedAt: number}|undefined> {
     const storage = this.storages.get(actorId.snsType);
     if (storage === undefined) {
       return undefined;
@@ -198,7 +208,8 @@ export class FollowsRepository {
     if (stored === undefined) {
       return undefined;
     }
-    return {followedIds: stored.value, updatedAt: stored.updatedAt};
+    const followedIds = stored.value.map((v) => new ActorId(actorId.snsType, v));
+    return {followedIds, updatedAt: stored.updatedAt};
   }
 
   async getUpdatedAt(actorId: ActorId): Promise<number | undefined> {
