@@ -67,6 +67,7 @@ class NeighborCrawlStartWorker {
         errorActorIds: new Set(),
         followCounts: followCounts,
       });
+      console.log('Start NeighborCrawlWorker for group ' + group.id.toString());
     }
   }
 
@@ -327,6 +328,7 @@ class NeighborCrawlWorker {
     getNeighborCrawlStatusRepository().delete();
     getNeighborCrawlFollowsFetchQueue().clear();
     getNeighborCrawlFollowsFetchBuffer().clear();
+    console.log('Finish neighbor crawl for group ' + status.groupId.toString());
   }
 
   private async finalizeCrawlByError(status: NeighborCrawlStatus): Promise<void> {
@@ -341,5 +343,6 @@ class NeighborCrawlWorker {
     getNeighborCrawlStatusRepository().delete();
     getNeighborCrawlFollowsFetchQueue().clear();
     getNeighborCrawlFollowsFetchBuffer().clear();
+    console.log('Fail neighbor crawl for group ' + status.groupId.toString());
   }
 }
