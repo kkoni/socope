@@ -1,13 +1,15 @@
 import { useState, useEffect } from 'react';
 import { useRecoilState } from 'recoil';
-import { StyleSheet, View } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
 import { Avatar, Button, Portal, Snackbar, Text, TextInput } from 'react-native-paper';
 import { useNavigation } from '@react-navigation/native';
 import deepEqual from 'deep-equal';
 import { selectedGroupIdState, allGroupsState, jumpedGroupIdState } from '../states';
 import { updateGroup, deleteGroup } from '../facades';
-import { Actor, ActorId, Group, SNSTypes } from '../model/data';
-import { getActorRepository, getGroupRepository } from '../model/repositories';
+import { Actor, ActorId, Group, SNSTypes, Neighbors } from '../model/data';
+import { getActorRepository, getGroupRepository, getNeighborsRepository } from '../model/repositories';
+import { NeighborCrawlStatus, NeighborCrawlResult } from '../model/worker/data';
+import { getNeighborCrawlStatusRepository, getNeighborCrawlResultRepository } from '../model/worker/repositories';
 
 export default function GroupDetailScreen() {
   const [ selectedGroupId ] = useRecoilState(selectedGroupIdState);
@@ -96,6 +98,40 @@ function GroupDetailView(props: GroupDetailViewProps) {
   const [ jumpedGroupId, setJumpedGroupId ] = useRecoilState(jumpedGroupIdState);
   const [ selectedGroupId, setSelectedGroupId ] = useRecoilState(selectedGroupIdState);
 
+  const [ neighbors, setNeighbors ] = useState<Neighbors|undefined>(undefined);
+  const [ neighborCrawlStatus, setNeighborCrawlStatus ] = useState<NeighborCrawlStatus|undefined>(undefined);
+  const [ neighborCrawlResult, setNeighborCrawlResult ] = useState<NeighborCrawlResult|undefined>(undefined);
+  const [ closeNeighbors, setCloseNeighbors ] = useState<Map<string, Actor>>(new Map());
+
+  useEffect(() => {
+    const fetchNeighborCrawlData = async () => {
+      const neighborCrawlStatusRepository = getNeighborCrawlStatusRepository();
+      const neighborCrawlStatus = neighborCrawlStatusRepository.get();
+      if (neighborCrawlStatus !== undefined && neighborCrawlStatus.groupId.equals(props.group.id)) {
+        setNeighborCrawlStatus(neighborCrawlStatus);
+      } else {
+        setNeighborCrawlStatus(undefined);
+      }
+      const neighborCrawlResultRepository = await getNeighborCrawlResultRepository();
+      const neighborCrawlResult = await neighborCrawlResultRepository.get(props.group.id);
+      setNeighborCrawlResult(neighborCrawlResult);
+      const neighborsRepository = await getNeighborsRepository();
+      const neighbors = await neighborsRepository.get(props.group.id);
+      setNeighbors(neighbors);
+      if (neighbors !== undefined) {
+        const closeNeighbors = new Map<string, Actor>();
+        for (const neighbor of neighbors.closeNeighbors) {
+          const actor = await getActorRepository().get(neighbor.actorId);
+          if (actor !== undefined) {
+            closeNeighbors.set(actor.id.toString(), actor);
+          }
+        }
+        setCloseNeighbors(closeNeighbors);
+      }
+    };
+    fetchNeighborCrawlData();
+  }, [props.group]);
+
   const deleteGroupHandler = async () => {
     await deleteGroup(
       props.group.id,
@@ -132,14 +168,18 @@ function GroupDetailView(props: GroupDetailViewProps) {
   const atProtoActorViews = props.group.actorIds.filter(aid => aid.snsType === SNSTypes.ATProto).map(actorId => {
     return createActorView(actorId, props.actors.get(actorId.toString()));
   });
+  const closeNeighborViews = neighbors === undefined ? [] : neighbors.closeNeighbors.map(neighbor => {
+    return createActorView(neighbor.actorId, closeNeighbors.get(neighbor.actorId.toString()));
+  });
 
   return (
-    <View>
+    <ScrollView>
       <View style={groupDetailStyles.editButtonsView}>
         <Button mode="contained" onPress={props.openEditorHandler}>Edit</Button>
         <Button mode="contained" onPress={deleteGroupHandler}>Delete</Button>
       </View>
-      <Text>{ props.group.name }</Text>
+      <Text variant="headlineLarge">{ props.group.name }</Text>
+      <Text variant="titleLarge">Members</Text>
       { activityPubActorViews.length > 0 && (
         <View style={groupDetailStyles.actorListView}>
           <Text variant="titleSmall" style={groupDetailStyles.actorListViewHeader}>ActivityPub</Text>
@@ -152,7 +192,28 @@ function GroupDetailView(props: GroupDetailViewProps) {
           { atProtoActorViews }
         </View>
       )}
-    </View>
+      { neighborCrawlStatus && (
+        <View>
+          <Text variant="titleLarge">Neighbor Crawl Status</Text>
+          <Text>Started at: {neighborCrawlStatus.startedAt.toISOString()}</Text>
+        </View>
+      )}
+      { neighborCrawlResult && (
+        <View>
+          <Text variant="titleLarge">Neighbor Crawl Result</Text>
+          <Text>Started at: {neighborCrawlResult.startedAt.toISOString()}</Text>
+          <Text>Finished at: {neighborCrawlResult.finishedAt.toISOString()}</Text>
+          { neighborCrawlResult.isSucceeded && (<Text>Succeeded</Text>) }
+          { !neighborCrawlResult.isSucceeded && (<Text>Error: {neighborCrawlResult.error}</Text>)}
+        </View>
+      )}
+      { neighbors && neighbors.closeNeighbors.length > 0 && (
+        <View>
+          <Text variant="titleLarge">CloseNeighbors</Text>
+          { closeNeighborViews }
+        </View>
+      )}
+    </ScrollView>
   );
 }
 

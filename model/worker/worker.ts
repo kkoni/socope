@@ -124,7 +124,7 @@ interface FollowsFetchResult {
 class NeighborCrawlWorker {
   private static intervalMillis = 10000;
   private static fetchesPerInterval = 20;
-  private static enouchActorsThreshold = 10;
+  private static enoughActorsThreshold = 100;
   private static followsFetchRetryLimit = 3;
   private static maxNeighbors = 1000;
   private static neighborFollowCountThreshold = 2;
@@ -181,7 +181,7 @@ class NeighborCrawlWorker {
   }
 
   private hasEnoughActors(status: NeighborCrawlStatus): boolean {
-    return status.groupActorIds.size + status.closeNeighborIds.size - status.errorActorIds.size >= NeighborCrawlWorker.enouchActorsThreshold;
+    return status.groupActorIds.size + status.closeNeighborIds.size - status.errorActorIds.size >= NeighborCrawlWorker.enoughActorsThreshold;
   }
 
   private async fetchFollows(params: NeighborCrawlFollowsFetchParams): Promise<FollowsFetchResult> {
