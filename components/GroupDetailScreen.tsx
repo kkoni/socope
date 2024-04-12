@@ -277,7 +277,7 @@ function GroupEditorView(props: GroupEditorViewProps) {
   const removeActorHandler = (actorId: ActorId) => {
     setActors(actors.map(a => {
       const diff: any = {};
-      if (deepEqual(a.actorId, actorId.value)) {
+      if (a.actorId.equals(actorId)) {
         if (a.status === 'unchanged') {
           diff.status = 'removed';
         } else {
