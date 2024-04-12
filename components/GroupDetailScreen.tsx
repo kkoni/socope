@@ -4,7 +4,7 @@ import { ScrollView, StyleSheet, View } from 'react-native';
 import { Avatar, Button, Portal, Snackbar, Text, TextInput } from 'react-native-paper';
 import { useNavigation } from '@react-navigation/native';
 import deepEqual from 'deep-equal';
-import { selectedGroupIdState, allGroupsState, jumpedGroupIdState } from '../states';
+import { selectedGroupIdState, allGroupsState, jumpedGroupIdState, currentNeighborCrawlStatusState } from '../states';
 import { updateGroup, deleteGroup } from '../facades';
 import { Actor, ActorId, Group, SNSTypes, Neighbors } from '../model/data';
 import { getActorRepository, getGroupRepository, getNeighborsRepository } from '../model/repositories';
@@ -97,6 +97,7 @@ function GroupDetailView(props: GroupDetailViewProps) {
   const [ allGroups, setAllGroups ] = useRecoilState(allGroupsState);
   const [ jumpedGroupId, setJumpedGroupId ] = useRecoilState(jumpedGroupIdState);
   const [ selectedGroupId, setSelectedGroupId ] = useRecoilState(selectedGroupIdState);
+  const [ currentNeighborCrawlStatus, _ ] = useRecoilState(currentNeighborCrawlStatusState)
 
   const [ neighbors, setNeighbors ] = useState<Neighbors|undefined>(undefined);
   const [ neighborCrawlStatus, setNeighborCrawlStatus ] = useState<NeighborCrawlStatus|undefined>(undefined);
@@ -130,7 +131,7 @@ function GroupDetailView(props: GroupDetailViewProps) {
       }
     };
     fetchNeighborCrawlData();
-  }, [props.group]);
+  }, [props.group, currentNeighborCrawlStatus]);
 
   const deleteGroupHandler = async () => {
     await deleteGroup(
@@ -369,7 +370,7 @@ function GroupEditorView(props: GroupEditorViewProps) {
   const atProtoActorViews = actors.filter(a => a.actorId.snsType === SNSTypes.ATProto).map(createActorView);
   
   return (
-    <View>
+    <ScrollView>
       <View style={groupEditorStyles.editButtonsView}>
         <Button mode="contained" onPress={updateGroupHandler} style={groupEditorStyles.editButton}>Update</Button>
         <Button mode="contained" onPress={props.cancelEditHandler} style={groupEditorStyles.editButton}>Cancel</Button>
@@ -421,7 +422,7 @@ function GroupEditorView(props: GroupEditorViewProps) {
           <Text>Actor found.</Text>
         </Snackbar>
       </Portal>
-    </View>
+    </ScrollView>
   );
 }
 

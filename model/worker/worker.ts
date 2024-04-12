@@ -17,13 +17,13 @@ import {
 let neighborCrawlStartWorkerRunning = false;
 let neighborCrawlWorkerRunning = false;
 
-export function startWorkers() {
+export function startWorkers(setCurrentNeighborCrawlStatus: (status: NeighborCrawlStatus|undefined) => void) {
   if (!neighborCrawlStartWorkerRunning) {
-    new NeighborCrawlStartWorker().start();
+    new NeighborCrawlStartWorker(setCurrentNeighborCrawlStatus).start();
     neighborCrawlStartWorkerRunning = true;
   }
   if (!neighborCrawlWorkerRunning) {
-    new NeighborCrawlWorker().start();
+    new NeighborCrawlWorker(setCurrentNeighborCrawlStatus).start();
     neighborCrawlWorkerRunning = true;
   }
 }
@@ -32,7 +32,13 @@ class NeighborCrawlStartWorker {
   private static successIntervalHours = 24 * 3;
   private static errorIntervalHours = 6;
 
-  async start() {
+  private setCurrentNeighborCrawlStatus: (status: NeighborCrawlStatus|undefined) => void;
+
+  constructor(setCurrentNeighborCrawlStatus: (status: NeighborCrawlStatus|undefined) => void) {
+    this.setCurrentNeighborCrawlStatus = setCurrentNeighborCrawlStatus;
+  }
+
+  async start(){
     setInterval(async () => {
       try {
         const groupRepository = await getGroupRepository();
@@ -59,14 +65,16 @@ class NeighborCrawlStartWorker {
       for (const actorId of group.actorIds) {
         checkFollowsAndEnqueueFetchParamsIfNecessary(actorId, true, followCounts);
       }
-      statusRepository.store({
+      const newStatus = {
         groupId: group.id,
         startedAt: new Date(),
         groupActorIds: new Set(group.actorIds.map((aid) => aid.toString())),
-        closeNeighborIds: new Set(),
-        errorActorIds: new Set(),
+        closeNeighborIds: new Set<string>(),
+        errorActorIds: new Set<string>(),
         followCounts: followCounts,
-      });
+      }
+      statusRepository.store(newStatus);
+      this.setCurrentNeighborCrawlStatus(newStatus);
       console.log('Start NeighborCrawlWorker for group ' + group.id.toString());
     }
   }
@@ -128,6 +136,12 @@ class NeighborCrawlWorker {
   private static followsFetchRetryLimit = 3;
   private static maxNeighbors = 1000;
   private static neighborFollowCountThreshold = 2;
+
+  private setCurrentNeighborCrawlStatus: (status: NeighborCrawlStatus|undefined) => void;
+
+  constructor(setCurrentNeighborCrawlStatus: (status: NeighborCrawlStatus|undefined) => void) {
+    this.setCurrentNeighborCrawlStatus = setCurrentNeighborCrawlStatus;
+  }
 
   async start() {
     setInterval(async () => {
@@ -328,6 +342,7 @@ class NeighborCrawlWorker {
     getNeighborCrawlStatusRepository().delete();
     getNeighborCrawlFollowsFetchQueue().clear();
     getNeighborCrawlFollowsFetchBuffer().clear();
+    this.setCurrentNeighborCrawlStatus(undefined);
     console.log('Finish neighbor crawl for group ' + status.groupId.toString());
   }
 
@@ -343,6 +358,7 @@ class NeighborCrawlWorker {
     getNeighborCrawlStatusRepository().delete();
     getNeighborCrawlFollowsFetchQueue().clear();
     getNeighborCrawlFollowsFetchBuffer().clear();
+    this.setCurrentNeighborCrawlStatus(undefined);
     console.log('Fail neighbor crawl for group ' + status.groupId.toString());
   }
 }

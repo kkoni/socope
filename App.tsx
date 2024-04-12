@@ -17,9 +17,9 @@ import { createDrawerNavigator } from '@react-navigation/drawer';
 import CreateGroupScreen from './components/CreateGroupScreen';
 import HomeScreen from './components/HomeScreen';
 import GroupDetailScreen from './components/GroupDetailScreen';
+import WorkerLauncher from './components/WorkerLauncher';
 import { allGroupsState } from './states';
 import { getGroupRepository } from './model/repositories';
-import { startWorkers } from './model/worker/worker';
 
 const { LightTheme } = adaptNavigationTheme({
   reactNavigationLight: NavigationDefaultTheme,
@@ -37,14 +37,13 @@ const CombinedLightTheme = {
 const Drawer = createDrawerNavigator();
 
 export default function App() {
-  startWorkers();
-
   return (
     <RecoilRoot>
       <PaperProvider theme={CombinedLightTheme}>
         <NavigationContainer theme={CombinedLightTheme}>
           <AppContainer/>
           <StatusBar style="auto" />
+          <WorkerLauncher/>
         </NavigationContainer>
       </PaperProvider>
     </RecoilRoot>
