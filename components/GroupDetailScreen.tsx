@@ -409,8 +409,9 @@ function GroupEditorView(props: GroupEditorViewProps) {
           visible={actorFetchErrorSnackbarVisible}
           onDismiss={() => setActorFetchErrorSnackbarVisible(false)}
           duration={10000}
+          style={groupEditorStyles.actorFetchErrorSnackbar}
         >
-          <Text>{ actorFetchError }</Text>
+          <Text style={groupEditorStyles.snackbarText}>{ actorFetchError }</Text>
         </Snackbar>
       </Portal>
       <Portal>
@@ -418,8 +419,9 @@ function GroupEditorView(props: GroupEditorViewProps) {
           visible={actorAddedSnackbarVisible}
           onDismiss={() => setActorAddedSnackbarVisible(false)}
           duration={3000}
+          style={groupEditorStyles.actorFoundSnackbar}
         >
-          <Text>Actor found.</Text>
+          <Text style={groupEditorStyles.snackbarText}>Actor found.</Text>
         </Snackbar>
       </Portal>
     </ScrollView>
@@ -440,4 +442,7 @@ const groupEditorStyles = StyleSheet.create({
   actorButton: { padding: 0 },
   actorListView: { marginTop: 10 },
   actorListViewHeader: { marginBottom: 5 },
+  actorFoundSnackbar: { backgroundColor: 'limegreen', color: 'white' },
+  actorFetchErrorSnackbar: { backgroundColor: 'crimson', color: 'white' },
+  snackbarText: { color: 'white' },
 });
