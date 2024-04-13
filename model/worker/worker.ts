@@ -131,7 +131,6 @@ interface FollowsFetchResult {
 
 class NeighborCrawlWorker {
   private static intervalMillis = 10000;
-  private static fetchesPerInterval = 20;
   private static enoughActorsThreshold = 100;
   private static followsFetchRetryLimit = 3;
   private static maxNeighbors = 1000;
@@ -154,13 +153,14 @@ class NeighborCrawlWorker {
   }
 
   private async crawl(): Promise<void> {
+    const start = Date.now();
     const statusRepository = getNeighborCrawlStatusRepository();
     const status = statusRepository.get();
     if (status === undefined) {
       return;
     }
     const followsFetchQueue = getNeighborCrawlFollowsFetchQueue();
-    for (let i = 0; i < NeighborCrawlWorker.fetchesPerInterval; i++) {
+    while (Date.now() - start < NeighborCrawlWorker.intervalMillis - 500) {
       const followsFetchParams = followsFetchQueue.dequeue();
       if (followsFetchParams === undefined) {
         if (this.hasEnoughActors(status) || !this.addCloseNeighbor(status)) {
