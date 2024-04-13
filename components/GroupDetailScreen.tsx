@@ -3,7 +3,6 @@ import { useRecoilState } from 'recoil';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { Avatar, Button, Portal, Snackbar, Text, TextInput } from 'react-native-paper';
 import { useNavigation } from '@react-navigation/native';
-import deepEqual from 'deep-equal';
 import { selectedGroupIdState, allGroupsState, jumpedGroupIdState, currentNeighborCrawlStatusState } from '../states';
 import { updateGroup, deleteGroup } from '../facades';
 import { Actor, ActorId, Group, SNSTypes, Neighbors } from '../model/data';
@@ -13,11 +12,47 @@ import { getNeighborCrawlStatusRepository, getNeighborCrawlResultRepository } fr
 
 export default function GroupDetailScreen() {
   const [ selectedGroupId ] = useRecoilState(selectedGroupIdState);
+  const [ currentNeighborCrawlStatus ] = useRecoilState(currentNeighborCrawlStatusState)
+
   const [ group, setGroup ] = useState<Group|undefined>(undefined);
   const [ actors, setActors ] = useState<Map<string, Actor>>(new Map());
   const [ inEditMode, setInEditMode ] = useState<boolean>(false);
+  const [ neighbors, setNeighbors ] = useState<Neighbors|undefined>(undefined);
+  const [ neighborCrawlStatus, setNeighborCrawlStatus ] = useState<NeighborCrawlStatus|undefined>(undefined);
+  const [ neighborCrawlResult, setNeighborCrawlResult ] = useState<NeighborCrawlResult|undefined>(undefined);
+  const [ closeNeighbors, setCloseNeighbors ] = useState<Map<string, Actor>>(new Map());
 
   useEffect(() => { reloadGroup() }, [selectedGroupId]);
+
+  useEffect(() => {
+    const fetchNeighborCrawlData = async () => {
+      if (group === undefined) return;
+      const neighborCrawlStatusRepository = getNeighborCrawlStatusRepository();
+      const neighborCrawlStatus = neighborCrawlStatusRepository.get();
+      if (neighborCrawlStatus !== undefined && neighborCrawlStatus.groupId.equals(group.id)) {
+        setNeighborCrawlStatus(neighborCrawlStatus);
+      } else {
+        setNeighborCrawlStatus(undefined);
+      }
+      const neighborCrawlResultRepository = await getNeighborCrawlResultRepository();
+      const neighborCrawlResult = await neighborCrawlResultRepository.get(group.id);
+      setNeighborCrawlResult(neighborCrawlResult);
+      const neighborsRepository = await getNeighborsRepository();
+      const neighbors = await neighborsRepository.get(group.id);
+      setNeighbors(neighbors);
+      if (neighbors !== undefined) {
+        const closeNeighbors = new Map<string, Actor>();
+        for (const neighbor of neighbors.closeNeighbors) {
+          const actor = await getActorRepository().get(neighbor.actorId);
+          if (actor !== undefined) {
+            closeNeighbors.set(actor.id.toString(), actor);
+          }
+        }
+        setCloseNeighbors(closeNeighbors);
+      }
+    };
+    fetchNeighborCrawlData();
+  }, [group, currentNeighborCrawlStatus]);
 
   const reloadGroup = async () => {
     if (selectedGroupId !== undefined) {
@@ -74,12 +109,22 @@ export default function GroupDetailScreen() {
         <GroupEditorView
           group={group}
           currentActors={actors}
+          neighbors={neighbors}
+          closeNeighbors={closeNeighbors}
           updateGroupHandler={updateGroup}
           cancelEditHandler={cancelEdit}
         />
       }
       { !inEditMode &&
-        <GroupDetailView group={group} actors={actors} openEditorHandler={openEditor}/>
+        <GroupDetailView
+          group={group}
+          actors={actors}
+          neighbors={neighbors}
+          closeNeighbors={closeNeighbors}
+          neighborCrawlStatus={neighborCrawlStatus}
+          neighborCrawlResult={neighborCrawlResult}
+          openEditorHandler={openEditor}
+        />
       }
     </View>
   );
@@ -88,6 +133,10 @@ export default function GroupDetailScreen() {
 type GroupDetailViewProps = {
   group: Group;
   actors: Map<string, Actor>;
+  neighbors: Neighbors|undefined;
+  closeNeighbors: Map<string, Actor>;
+  neighborCrawlStatus: NeighborCrawlStatus|undefined;
+  neighborCrawlResult: NeighborCrawlResult|undefined;
   openEditorHandler: () => void;
 };
 
@@ -97,41 +146,6 @@ function GroupDetailView(props: GroupDetailViewProps) {
   const [ allGroups, setAllGroups ] = useRecoilState(allGroupsState);
   const [ jumpedGroupId, setJumpedGroupId ] = useRecoilState(jumpedGroupIdState);
   const [ selectedGroupId, setSelectedGroupId ] = useRecoilState(selectedGroupIdState);
-  const [ currentNeighborCrawlStatus, _ ] = useRecoilState(currentNeighborCrawlStatusState)
-
-  const [ neighbors, setNeighbors ] = useState<Neighbors|undefined>(undefined);
-  const [ neighborCrawlStatus, setNeighborCrawlStatus ] = useState<NeighborCrawlStatus|undefined>(undefined);
-  const [ neighborCrawlResult, setNeighborCrawlResult ] = useState<NeighborCrawlResult|undefined>(undefined);
-  const [ closeNeighbors, setCloseNeighbors ] = useState<Map<string, Actor>>(new Map());
-
-  useEffect(() => {
-    const fetchNeighborCrawlData = async () => {
-      const neighborCrawlStatusRepository = getNeighborCrawlStatusRepository();
-      const neighborCrawlStatus = neighborCrawlStatusRepository.get();
-      if (neighborCrawlStatus !== undefined && neighborCrawlStatus.groupId.equals(props.group.id)) {
-        setNeighborCrawlStatus(neighborCrawlStatus);
-      } else {
-        setNeighborCrawlStatus(undefined);
-      }
-      const neighborCrawlResultRepository = await getNeighborCrawlResultRepository();
-      const neighborCrawlResult = await neighborCrawlResultRepository.get(props.group.id);
-      setNeighborCrawlResult(neighborCrawlResult);
-      const neighborsRepository = await getNeighborsRepository();
-      const neighbors = await neighborsRepository.get(props.group.id);
-      setNeighbors(neighbors);
-      if (neighbors !== undefined) {
-        const closeNeighbors = new Map<string, Actor>();
-        for (const neighbor of neighbors.closeNeighbors) {
-          const actor = await getActorRepository().get(neighbor.actorId);
-          if (actor !== undefined) {
-            closeNeighbors.set(actor.id.toString(), actor);
-          }
-        }
-        setCloseNeighbors(closeNeighbors);
-      }
-    };
-    fetchNeighborCrawlData();
-  }, [props.group, currentNeighborCrawlStatus]);
 
   const deleteGroupHandler = async () => {
     await deleteGroup(
@@ -169,8 +183,8 @@ function GroupDetailView(props: GroupDetailViewProps) {
   const atProtoActorViews = props.group.actorIds.filter(aid => aid.snsType === SNSTypes.ATProto).map(actorId => {
     return createActorView(actorId, props.actors.get(actorId.toString()));
   });
-  const closeNeighborViews = neighbors === undefined ? [] : neighbors.closeNeighbors.map(neighbor => {
-    return createActorView(neighbor.actorId, closeNeighbors.get(neighbor.actorId.toString()));
+  const closeNeighborViews = props.neighbors === undefined ? [] : props.neighbors.closeNeighbors.map(neighbor => {
+    return createActorView(neighbor.actorId, props.closeNeighbors.get(neighbor.actorId.toString()));
   });
 
   return (
@@ -193,22 +207,22 @@ function GroupDetailView(props: GroupDetailViewProps) {
           { atProtoActorViews }
         </View>
       )}
-      { neighborCrawlStatus && (
+      { props.neighborCrawlStatus && (
         <View>
           <Text variant="titleLarge">Neighbor Crawl Status</Text>
-          <Text>Started at: {neighborCrawlStatus.startedAt.toISOString()}</Text>
+          <Text>Started at: {props.neighborCrawlStatus.startedAt.toISOString()}</Text>
         </View>
       )}
-      { neighborCrawlResult && (
+      { props.neighborCrawlResult && (
         <View>
           <Text variant="titleLarge">Neighbor Crawl Result</Text>
-          <Text>Started at: {neighborCrawlResult.startedAt.toISOString()}</Text>
-          <Text>Finished at: {neighborCrawlResult.finishedAt.toISOString()}</Text>
-          { neighborCrawlResult.isSucceeded && (<Text>Succeeded</Text>) }
-          { !neighborCrawlResult.isSucceeded && (<Text>Error: {neighborCrawlResult.error}</Text>)}
+          <Text>Started at: {props.neighborCrawlResult.startedAt.toISOString()}</Text>
+          <Text>Finished at: {props.neighborCrawlResult.finishedAt.toISOString()}</Text>
+          { props.neighborCrawlResult.isSucceeded && (<Text>Succeeded</Text>) }
+          { !props.neighborCrawlResult.isSucceeded && (<Text>Error: {props.neighborCrawlResult.error}</Text>)}
         </View>
       )}
-      { neighbors && neighbors.closeNeighbors.length > 0 && (
+      { props.neighbors && props.neighbors.closeNeighbors.length > 0 && (
         <View>
           <Text variant="titleLarge">CloseNeighbors</Text>
           { closeNeighborViews }
@@ -234,6 +248,8 @@ const groupDetailStyles = StyleSheet.create({
 type GroupEditorViewProps = {
   group: Group;
   currentActors: Map<string, Actor>;
+  neighbors: Neighbors|undefined;
+  closeNeighbors: Map<string, Actor>;
   updateGroupHandler: () => void;
   cancelEditHandler: () => void;
 }
@@ -264,7 +280,7 @@ function GroupEditorView(props: GroupEditorViewProps) {
   const addActorHandler = (actorId: ActorId) => {
     setActors(actors.map(a => {
       const diff: any = {};
-      if (deepEqual(a.actorId, actorId)) {
+      if (a.actorId.equals(actorId)) {
         if (a.status === 'removed') {
           diff.status = 'unchanged';
         } else {
@@ -302,7 +318,7 @@ function GroupEditorView(props: GroupEditorViewProps) {
         setActorFetchError('Actor not found');
         setActorAddedSnackbarVisible(false);
         setActorFetchErrorSnackbarVisible(true);
-      } else if (actors.some(a => deepEqual(a.actorId, actor.id))) {
+      } else if (actors.some(a => a.actorId.equals(actor.id))) {
         setActorFetchError('Actor already added');
         setActorAddedSnackbarVisible(false);
         setActorFetchErrorSnackbarVisible(true);
@@ -319,6 +335,17 @@ function GroupEditorView(props: GroupEditorViewProps) {
       setActorFetchErrorSnackbarVisible(true);
     }
   };
+
+  const addActorFromNeighborsHandler = async (actorId: ActorId) => {
+    const actor = await getActorRepository().get(actorId);
+    if (actor === undefined) {
+      return;
+    }
+    if (actors.some(a => a.actorId.equals(actor.id))) {
+      return;
+    }
+    setActors([...actors, {actorId: actor.id, actor: actor, status: 'added'}]);
+  }
 
   const updateGroupHandler = async () => {
     const actorIds = actors.filter(a => a.status !== 'removed').map(a => a.actorId);
@@ -369,6 +396,32 @@ function GroupEditorView(props: GroupEditorViewProps) {
   const activityPubActorViews = actors.filter(a => a.actorId.snsType === SNSTypes.ActivityPub).map(createActorView);
   const atProtoActorViews = actors.filter(a => a.actorId.snsType === SNSTypes.ATProto).map(createActorView);
   
+  const createNeighborView = (actorId: ActorId, actor: Actor|undefined) => (
+    <View key={actorId.toString()} style={groupEditorStyles.actorView}>
+      { actor?.icon &&
+        <View style={groupEditorStyles.actorIconView}>
+          <Avatar.Image source={{uri: actor.icon}} size={48}/>
+        </View>
+      }
+      { actor &&
+        <View style={groupEditorStyles.actorNameView}>
+          <Text>{actor.name} ({actor.handle})</Text>
+        </View>
+      }
+      { !actor &&
+        <View style={groupEditorStyles.actorIdView}>
+          <Text>{actorId.value}</Text>
+        </View>
+      }
+      <View style={groupEditorStyles.actorButtonView}>
+        <Button style={groupEditorStyles.actorButton} onPress={() => addActorFromNeighborsHandler(actorId)}>Add</Button>
+      </View>
+    </View>
+  );
+  const closeNeighborViews = props.neighbors === undefined ? [] : props.neighbors.closeNeighbors.map(neighbor => {
+    return createNeighborView(neighbor.actorId, props.closeNeighbors.get(neighbor.actorId.toString()));
+  });
+
   return (
     <ScrollView>
       <View style={groupEditorStyles.editButtonsView}>
@@ -402,6 +455,12 @@ function GroupEditorView(props: GroupEditorViewProps) {
         <View style={groupEditorStyles.actorListView}>
           <Text variant="titleSmall" style={groupEditorStyles.actorListViewHeader}>ATProto</Text>
           { atProtoActorViews }
+        </View>
+      )}
+      { closeNeighborViews.length > 0 && (
+        <View style={groupEditorStyles.actorListView}>
+          <Text variant="titleSmall" style={groupEditorStyles.actorListViewHeader}>CloseNeighbors</Text>
+          { closeNeighborViews }
         </View>
       )}
       <Portal>
