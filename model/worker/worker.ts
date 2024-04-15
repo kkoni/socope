@@ -6,26 +6,34 @@ import {
   getFollowingClient as getActivityPubFollowingClient,
 } from '../activity-pub/repositories';
 import { getFollowsClient as getATProtoFollowsClient } from '../atproto/repositories';
-import { NeighborCrawlStatus, NeighborCrawlFollowsFetchParams } from './data';
+import {
+  NeighborCrawlStatus,
+  NeighborCrawlFollowsFetchParams,
+  NeighborCrawlFollowsFetchQueue,
+  NeighborCrawlDataSet,
+} from './data';
 import {
   getNeighborCrawlResultRepository,
   getNeighborCrawlStatusRepository,
-  getNeighborCrawlFollowsFetchQueue,
-  getNeighborCrawlFollowsFetchBuffer,
 } from './repositories';
 
-let neighborCrawlStartWorkerRunning = false;
-let neighborCrawlWorkerRunning = false;
+let neighborCrawlStartWorker: NeighborCrawlStartWorker|undefined;
+let neighborCrawlWorker: NeighborCrawlWorker|undefined;
 
 export function startWorkers(setCurrentNeighborCrawlStatus: (status: NeighborCrawlStatus|undefined) => void) {
-  if (!neighborCrawlStartWorkerRunning) {
-    new NeighborCrawlStartWorker(setCurrentNeighborCrawlStatus).start();
-    neighborCrawlStartWorkerRunning = true;
+  if (neighborCrawlStartWorker === undefined) {
+    neighborCrawlStartWorker = new NeighborCrawlStartWorker(setCurrentNeighborCrawlStatus);
+    neighborCrawlStartWorker.start();
   }
-  if (!neighborCrawlWorkerRunning) {
-    new NeighborCrawlWorker(setCurrentNeighborCrawlStatus).start();
-    neighborCrawlWorkerRunning = true;
+  if (neighborCrawlWorker === undefined) {
+    neighborCrawlWorker = new NeighborCrawlWorker(setCurrentNeighborCrawlStatus);
+    neighborCrawlWorker.start();
   }
+}
+
+export function stopWorkers() {
+  neighborCrawlStartWorker?.stop();
+  neighborCrawlWorker?.stop();
 }
 
 class NeighborCrawlStartWorker {
@@ -33,22 +41,31 @@ class NeighborCrawlStartWorker {
   private static errorIntervalHours = 6;
 
   private setCurrentNeighborCrawlStatus: (status: NeighborCrawlStatus|undefined) => void;
+  private clearInterval: any|undefined;
 
   constructor(setCurrentNeighborCrawlStatus: (status: NeighborCrawlStatus|undefined) => void) {
     this.setCurrentNeighborCrawlStatus = setCurrentNeighborCrawlStatus;
   }
 
-  async start(){
-    setInterval(async () => {
-      try {
-        const groupRepository = await getGroupRepository();
-        for (const group of (await groupRepository.getAll())) {
-          await this.checkStatusAndStartCrawl(group);
-        }
-      } catch(e) {
-        console.error('NeighborCrawlStartWorker error', e);
+  start(){
+    this.clearInterval = setInterval(() => { this.execute(); }, 1000);
+  }
+
+  stop() {
+    if (this.clearInterval !== undefined) {
+      clearInterval(this.clearInterval);
+    }
+  }
+
+  private async execute() {
+    try {
+      const groupRepository = await getGroupRepository();
+      for (const group of (await groupRepository.getAll())) {
+        await this.checkStatusAndStartCrawl(group);
       }
-    }, 10000);
+    } catch(e) {
+      console.error('NeighborCrawlStartWorker error', e);
+    }
   }
 
   private async checkStatusAndStartCrawl(group: Group): Promise<void> {
@@ -59,21 +76,16 @@ class NeighborCrawlStartWorker {
     }
 
     if (await this.isTimeToStartCrawl(group)) {
-      const followCounts = new Map<string, { countByMember: number, countByNeighbor: number }>();
-      const followsFetchQueue = getNeighborCrawlFollowsFetchQueue();
-      followsFetchQueue.clear();
-      for (const actorId of group.actorIds) {
-        checkFollowsAndEnqueueFetchParamsIfNecessary(actorId, true, followCounts);
-      }
+      const activityPubActorIds = group.actorIds.filter((aid) => aid.snsType === SNSTypes.ActivityPub);
+      const atProtoActorIds = group.actorIds.filter((aid) => aid.snsType === SNSTypes.ATProto);
+      const activityPubDataSet = activityPubActorIds.length === 0 ? undefined : await this.createInitialDataSet(activityPubActorIds, statusRepository.getActivityPubFollowsFetchQueue());
+      const atProtoDataSet = atProtoActorIds.length === 0 ? undefined : await this.createInitialDataSet(atProtoActorIds, statusRepository.getAtProtoFollowsFetchQueue());
       const newStatus = {
         groupId: group.id,
         startedAt: new Date(),
-        groupActorIds: new Set(group.actorIds.map((aid) => aid.toString())),
-        closeNeighborIds: new Set<string>(),
-        errorActorIds: new Set<string>(),
-        followCounts: followCounts,
-      }
-      statusRepository.store(newStatus);
+        fetchFinished: { activityPub: 0, atProto: 0 },
+      };
+      statusRepository.initializeCrawl(newStatus, activityPubDataSet, atProtoDataSet);
       this.setCurrentNeighborCrawlStatus(newStatus);
       console.log('Start NeighborCrawlWorker for group ' + group.id.toString());
     }
@@ -87,20 +99,33 @@ class NeighborCrawlStartWorker {
       (lastResult.isSucceeded && lastResult.finishedAt.getTime() < getEpochSeconds() - NeighborCrawlStartWorker.successIntervalHours * 3600) ||
       (!lastResult.isSucceeded && lastResult.finishedAt.getTime() < getEpochSeconds() - NeighborCrawlStartWorker.errorIntervalHours * 3600);
   }
+
+  private async createInitialDataSet(actorIds: ActorId[], followsFetchQueue: NeighborCrawlFollowsFetchQueue): Promise<NeighborCrawlDataSet> {
+    const dataSet = {
+      groupActorIds: new Set(actorIds.map((aid) => aid.toString())),
+      closeNeighborIds: new Set<string>(),
+      errorActorIds: new Set<string>(),
+      followCounts: new Map<string, { countByMember: number, countByNeighbor: number }>(),
+    };
+    for (const actorId of actorIds) {
+      await checkFollowsAndEnqueueFetchParamsIfNecessary(actorId, true, dataSet, followsFetchQueue);
+    }
+    return dataSet;
+  }
 }
 
 async function checkFollowsAndEnqueueFetchParamsIfNecessary(
   actorId: ActorId,
   isMember: boolean,
-  followCounts: Map<string, { countByMember: number, countByNeighbor: number }>,
+  dataSet: NeighborCrawlDataSet,
+  followsFetchQueue: NeighborCrawlFollowsFetchQueue,
 ) {
   const followsRepository = await getFollowsRepository();
-  const followsFetchQueue = getNeighborCrawlFollowsFetchQueue();
   const follows = await followsRepository.get(actorId);
   if (follows === undefined) {
     followsFetchQueue.enqueue({actorId, errorCount: 0});
   } else {
-    addFollowCounts(followCounts, isMember, follows.followedIds);
+    addFollowCounts(dataSet.followCounts, isMember, follows.followedIds);
   }
 }
 
@@ -111,8 +136,7 @@ function addFollowCounts(
 ) {
   for (const followedId of followedIds) {
     const followedIdString = followedId.toString();
-    const count = followCounts.get(followedIdString);
-    if (count === undefined) {
+    if (!followCounts.has(followedIdString)) {
       followCounts.set(followedIdString, { countByMember: 0, countByNeighbor: 0 });
     }
     if (isMember) {
@@ -130,26 +154,35 @@ interface FollowsFetchResult {
 }
 
 class NeighborCrawlWorker {
-  private static intervalMillis = 10000;
+  private static intervalMillis = 2000;
   private static enoughActorsThreshold = 100;
   private static followsFetchRetryLimit = 3;
   private static maxNeighbors = 1000;
   private static neighborFollowCountThreshold = 2;
 
   private setCurrentNeighborCrawlStatus: (status: NeighborCrawlStatus|undefined) => void;
+  private clearInterval: any|undefined;
 
   constructor(setCurrentNeighborCrawlStatus: (status: NeighborCrawlStatus|undefined) => void) {
     this.setCurrentNeighborCrawlStatus = setCurrentNeighborCrawlStatus;
   }
 
-  async start() {
-    setInterval(async () => {
-      try {
-        await this.crawl();
-      } catch(e) {
-        console.error('NeighborCrawlWorker error', e);
-      }
-    }, NeighborCrawlWorker.intervalMillis);
+  start() {
+    this.clearInterval = setInterval(() => { this.execute(); }, NeighborCrawlWorker.intervalMillis);
+  }
+
+  stop() {
+    if (this.clearInterval !== undefined) {
+      clearInterval(this.clearInterval);
+    }
+  }
+
+  private async execute() {
+    try {
+      await this.crawl();
+    } catch(e) {
+      console.error('NeighborCrawlWorker error', e);
+    }
   }
 
   private async crawl(): Promise<void> {
@@ -159,55 +192,79 @@ class NeighborCrawlWorker {
     if (status === undefined) {
       return;
     }
-    const followsFetchQueue = getNeighborCrawlFollowsFetchQueue();
     while (Date.now() - start < NeighborCrawlWorker.intervalMillis - 500) {
-      const followsFetchParams = followsFetchQueue.dequeue();
-      if (followsFetchParams === undefined) {
-        if (this.hasEnoughActors(status) || !this.addCloseNeighbor(status)) {
-          this.finalizeCrawl(status);
-          return;
+      const activityPubDataSet = statusRepository.getActivityPubDataSet();
+      const atProtoDataSet = statusRepository.getAtProtoDataSet();
+      if (activityPubDataSet !== undefined && !statusRepository.isActivityPubFetchFinished()) {
+        if (await this.fetchNext(status, activityPubDataSet, statusRepository.getActivityPubFollowsFetchQueue())) {
+          statusRepository.setActivityPubFetchFinished();
+        }
+      } else if (atProtoDataSet !== undefined && !statusRepository.isAtProtoFetchFinished()) {
+        const ret = await this.fetchNext(status, atProtoDataSet, statusRepository.getAtProtoFollowsFetchQueue());
+        if (ret) {
+          statusRepository.setAtProtoFetchFinished();
         }
       } else {
-        const followsFetchResult = await this.fetchFollows(followsFetchParams);
-        const followsFetchBuffer = getNeighborCrawlFollowsFetchBuffer();
-        if (followsFetchResult.isError) {
-          followsFetchBuffer.delete(followsFetchParams.actorId);
-          status.errorActorIds.add(followsFetchParams.actorId.toString());
-          if (status.errorActorIds.size > (status.groupActorIds.size + status.closeNeighborIds.size) / 2) {
-            this.finalizeCrawlByError(status);
-            return;
-          }
-        } else if (followsFetchResult.allFollowsAvailable) {
-          const followedIds = followsFetchBuffer.get(followsFetchParams.actorId);
-          if (followedIds !== undefined) {
-            const followsRepository = await getFollowsRepository();
-            followsRepository.store(followsFetchParams.actorId, followedIds.map((aid) => aid.value));
-            addFollowCounts(status.followCounts, status.groupActorIds.has(followsFetchParams.actorId.toString()), followedIds);
-          }
-        } else {
-          if (followsFetchResult.nextParams !== undefined) {
-            const followsFetchQueue = getNeighborCrawlFollowsFetchQueue();
-            followsFetchQueue.enqueue(followsFetchResult.nextParams);
-          }
-        }
+        await this.finalizeCrawl(status);
+      }
+      if (statusRepository.get() === undefined) {
+        return;
       }
     }
   }
 
-  private hasEnoughActors(status: NeighborCrawlStatus): boolean {
-    return status.groupActorIds.size + status.closeNeighborIds.size - status.errorActorIds.size >= NeighborCrawlWorker.enoughActorsThreshold;
+  private async fetchNext(status: NeighborCrawlStatus, dataSet: NeighborCrawlDataSet, followsFetchQueue: NeighborCrawlFollowsFetchQueue): Promise<boolean> {
+    const followsFetchBuffer = getNeighborCrawlStatusRepository().getFollowsFetchBuffer();
+    const followsFetchParams = followsFetchQueue.dequeue();
+    if (followsFetchParams === undefined) {
+      if (this.hasEnoughActors(dataSet) || !(await this.addCloseNeighbor(dataSet, followsFetchQueue))) {
+        return true;
+      }
+    } else {
+      const followsFetchResult = await this.fetchFollows(followsFetchParams, dataSet);
+      if (followsFetchResult.isError) {
+        followsFetchBuffer.delete(followsFetchParams.actorId);
+        dataSet.errorActorIds.add(followsFetchParams.actorId.toString());
+        if (dataSet.errorActorIds.size > (dataSet.groupActorIds.size + dataSet.closeNeighborIds.size) / 2) {
+          await this.finalizeCrawlByError(status);
+        }
+      } else if (followsFetchResult.allFollowsAvailable) {
+        const followedIds = followsFetchBuffer.get(followsFetchParams.actorId);
+        if (followedIds !== undefined) {
+          const followsRepository = await getFollowsRepository();
+          await followsRepository.store(followsFetchParams.actorId, followedIds.map((aid) => aid.value));
+          addFollowCounts(dataSet.followCounts, dataSet.groupActorIds.has(followsFetchParams.actorId.toString()), followedIds);
+        }
+      } else {
+        if (followsFetchResult.nextParams !== undefined) {
+          followsFetchQueue.enqueue(followsFetchResult.nextParams);
+        }
+      }
+    }
+    return false;
   }
 
-  private async fetchFollows(params: NeighborCrawlFollowsFetchParams): Promise<FollowsFetchResult> {
+  private hasEnoughActors(dataSet: NeighborCrawlDataSet): boolean {
+    return dataSet.groupActorIds.size + dataSet.closeNeighborIds.size - dataSet.errorActorIds.size >= NeighborCrawlWorker.enoughActorsThreshold;
+  }
+    
+
+  private async fetchFollows(
+    params: NeighborCrawlFollowsFetchParams,
+    dataSet: NeighborCrawlDataSet,
+  ): Promise<FollowsFetchResult> {
     switch(params.actorId.snsType) {
       case SNSTypes.ActivityPub:
-        return await this.fetchActivityPubFollowing(params);
+        return await this.fetchActivityPubFollowing(params, dataSet);
       case SNSTypes.ATProto:
-        return await this.fetchATProtoFollows(params);
+        return await this.fetchATProtoFollows(params, dataSet);
     }
   }
 
-  private async fetchActivityPubFollowing(params: NeighborCrawlFollowsFetchParams): Promise<FollowsFetchResult> {
+  private async fetchActivityPubFollowing(
+    params: NeighborCrawlFollowsFetchParams,
+    dataSet: NeighborCrawlDataSet,
+  ): Promise<FollowsFetchResult> {
     try {
       const client = getActivityPubFollowingClient();
       let pageUri: string|undefined = params.cursor;
@@ -232,7 +289,7 @@ class NeighborCrawlWorker {
           return null;
         }
       }).filter((aid) => aid !== null) as ActorId[];
-      const followsFetchBuffer = getNeighborCrawlFollowsFetchBuffer();
+      const followsFetchBuffer = getNeighborCrawlStatusRepository().getFollowsFetchBuffer();
       followsFetchBuffer.add(params.actorId, followedIds);
       if (follows.next === undefined) {
         return { allFollowsAvailable: true, isError: false };
@@ -249,7 +306,10 @@ class NeighborCrawlWorker {
     }
   }
 
-  private async fetchATProtoFollows(params: NeighborCrawlFollowsFetchParams): Promise<FollowsFetchResult> {
+  private async fetchATProtoFollows(
+    params: NeighborCrawlFollowsFetchParams,
+    dataSet: NeighborCrawlDataSet,
+  ): Promise<FollowsFetchResult> {
     try {
       const client = getATProtoFollowsClient();
       const response = await client.fetch(params.actorId.value, params.cursor);
@@ -257,7 +317,7 @@ class NeighborCrawlWorker {
         return { allFollowsAvailable: false, isError: true };
       }
       const followedIds = response.followedIds.map((aid) => new ActorId(SNSTypes.ATProto, aid));
-      const followsFetchBuffer = getNeighborCrawlFollowsFetchBuffer();
+      const followsFetchBuffer = getNeighborCrawlStatusRepository().getFollowsFetchBuffer();
       followsFetchBuffer.add(params.actorId, followedIds);
       if (response.cursor === undefined) {
         return { allFollowsAvailable: true, isError: false };
@@ -274,15 +334,15 @@ class NeighborCrawlWorker {
     }
   }
 
-  private async addCloseNeighbor(status: NeighborCrawlStatus): Promise<boolean> {
-    const followCounts = Array.from(status.followCounts.entries());
+  private async addCloseNeighbor(dataSet: NeighborCrawlDataSet, followsFetchQueue: NeighborCrawlFollowsFetchQueue): Promise<boolean> {
+    const followCounts = Array.from(dataSet.followCounts.entries());
     this.sortFollowCounts(followCounts);
     for (const fc of followCounts) {
-      if (!status.groupActorIds.has(fc[0]) && !status.closeNeighborIds.has(fc[0]) && !status.errorActorIds.has(fc[0])) {
+      if (!dataSet.groupActorIds.has(fc[0]) && !dataSet.closeNeighborIds.has(fc[0]) && !dataSet.errorActorIds.has(fc[0])) {
         const actorId = parseActorId(fc[0]);
         if (actorId !== undefined) {
-          status.closeNeighborIds.add(fc[0]);
-          checkFollowsAndEnqueueFetchParamsIfNecessary(actorId, status.groupActorIds.has(fc[0]), status.followCounts);
+          dataSet.closeNeighborIds.add(fc[0]);
+          await checkFollowsAndEnqueueFetchParamsIfNecessary(actorId, dataSet.groupActorIds.has(fc[0]), dataSet, followsFetchQueue);
           return true;
         }
       }
@@ -303,61 +363,73 @@ class NeighborCrawlWorker {
   }
 
   private async finalizeCrawl(status: NeighborCrawlStatus): Promise<void> {
-    const closeNeighbors: Neighbor[] = [];
-    for (const closeNeighborId of status.closeNeighborIds) {
-      const actorId = parseActorId(closeNeighborId);
-      if (actorId !== undefined) {
-        const followCount = status.followCounts.get(closeNeighborId);
-        closeNeighbors.push({ actorId, followCount: followCount === undefined ? 0 : followCount.countByMember + followCount.countByNeighbor });
-      }
-    }
-
-    const followCounts: [string, { countByMember: number, countByNeighbor: number }][] =
-      Array.from(status.followCounts.entries()).filter((fc) => {
-        return !status.groupActorIds.has(fc[0]) &&
-          !status.closeNeighborIds.has(fc[0]) &&
-          fc[1].countByMember + fc[1].countByNeighbor > NeighborCrawlWorker.neighborFollowCountThreshold;
-      });;
-    this.sortFollowCounts(followCounts);
-    const farNeighbors: Neighbor[] = [];
-    for (const fc of followCounts) {
-      const actorId = parseActorId(fc[0]);
-      if (actorId !== undefined) {
-        farNeighbors.push({ actorId, followCount: fc[1].countByMember + fc[1].countByNeighbor });
-      }
-    }
-    const selectedFarNeighbors = farNeighbors.slice(0, NeighborCrawlWorker.maxNeighbors - closeNeighbors.length);
+    const statusRepository = getNeighborCrawlStatusRepository();
+    const activityPubDataSet = statusRepository.getActivityPubDataSet();
+    const atProtoDataSet = statusRepository.getAtProtoDataSet();
+    const activityPubMemberCount = activityPubDataSet?.groupActorIds.size || 0;
+    const atProtoMemberCount = atProtoDataSet?.groupActorIds.size || 0;
+    const memberCount = activityPubMemberCount + atProtoMemberCount;
+    const activityPubNeighborsLimit = memberCount === 0 ? 0 : NeighborCrawlWorker.maxNeighbors * (activityPubMemberCount / memberCount);
+    const atProtoNeighborsLimit = memberCount === 0 ? 0 : NeighborCrawlWorker.maxNeighbors * (atProtoMemberCount / memberCount);
+    const activityPubNeighbors = activityPubDataSet === undefined ? [] : this.selectNeighbors(activityPubDataSet, activityPubNeighborsLimit);
+    const atProtoNeighbors = atProtoDataSet === undefined ? [] : this.selectNeighbors(atProtoDataSet, atProtoNeighborsLimit);
 
     const neighborsRepository = await getNeighborsRepository();
-    neighborsRepository.store(status.groupId, { closeNeighbors, farNeighbors: selectedFarNeighbors });
+    neighborsRepository.store(status.groupId, { activityPubNeighbors, atProtoNeighbors });
 
     const resultRepository = await getNeighborCrawlResultRepository();
+    const groupActorIds: ActorId[] = [];
+    if (activityPubDataSet !== undefined) {
+      groupActorIds.push(...Array.from(activityPubDataSet.groupActorIds).map((aid) => parseActorId(aid)!));
+    }
+    if (atProtoDataSet !== undefined) {
+      groupActorIds.push(...Array.from(atProtoDataSet.groupActorIds).map((aid) => parseActorId(aid)!));
+    }
     resultRepository.store({
       groupId: status.groupId,
       isSucceeded: true,
       startedAt: status.startedAt,
       finishedAt: new Date(),
-      groupActorIds: Array.from(status.groupActorIds).map((aid) => parseActorId(aid)!),
+      groupActorIds,
     });
     getNeighborCrawlStatusRepository().delete();
-    getNeighborCrawlFollowsFetchQueue().clear();
-    getNeighborCrawlFollowsFetchBuffer().clear();
     this.setCurrentNeighborCrawlStatus(undefined);
     console.log('Finish neighbor crawl for group ' + status.groupId.toString());
   }
 
+  private selectNeighbors(dataSet: NeighborCrawlDataSet, limit: number): Neighbor[] {
+    const neighbors: Neighbor[] = Array.from(dataSet.followCounts.entries()).map((fc) => {
+      const actorId = parseActorId(fc[0]);
+      if (actorId === undefined || dataSet.groupActorIds.has(fc[0]) || fc[1].countByMember + fc[1].countByNeighbor <= NeighborCrawlWorker.neighborFollowCountThreshold) {
+        return undefined;
+      }
+      const score = fc[1].countByMember * 2 + fc[1].countByNeighbor;
+      return { actorId, score };
+    }).filter((neighbor) => neighbor !== undefined) as Neighbor[];
+    neighbors.sort((a, b) => b.score - a.score);
+    return neighbors.slice(0, limit);
+  }
+
   private async finalizeCrawlByError(status: NeighborCrawlStatus): Promise<void> {
+    const statusRepository = getNeighborCrawlStatusRepository();
+    const activityPubDataSet = statusRepository.getActivityPubDataSet();
+    const atProtoDataSet = statusRepository.getAtProtoDataSet();
     const resultRepository = await getNeighborCrawlResultRepository();
+    const groupActorIds: ActorId[] = [];
+    if (activityPubDataSet !== undefined) {
+      groupActorIds.push(...Array.from(activityPubDataSet.groupActorIds).map((aid) => parseActorId(aid)!));
+    }
+    if (atProtoDataSet !== undefined) {
+      groupActorIds.push(...Array.from(atProtoDataSet.groupActorIds).map((aid) => parseActorId(aid)!));
+    }
     resultRepository.store({
       groupId: status.groupId,
       isSucceeded: false,
       startedAt: status.startedAt,
       finishedAt: new Date(),
-      groupActorIds: Array.from(status.groupActorIds).map((aid) => parseActorId(aid)!),
+      groupActorIds,
     });
     getNeighborCrawlStatusRepository().delete();
-    getNeighborCrawlFollowsFetchQueue().clear();
-    getNeighborCrawlFollowsFetchBuffer().clear();
     this.setCurrentNeighborCrawlStatus(undefined);
     console.log('Fail neighbor crawl for group ' + status.groupId.toString());
   }

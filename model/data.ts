@@ -314,48 +314,50 @@ export function deserializeGroup(s: string): Group|undefined {
 }
 
 export interface Neighbors {
-  closeNeighbors: Neighbor[];
-  farNeighbors: Neighbor[];
+  activityPubNeighbors: Neighbor[];
+  atProtoNeighbors: Neighbor[];
 }
 
 export interface Neighbor {
   actorId: ActorId;
-  followCount: number;
+  score: number;
 }
 
 function neighborsToSerializableObject(neighbors: Neighbors): any {
   return {
-    closeNeighbors: neighbors.closeNeighbors.map(neighborToSerializableObject),
-    farNeighbors: neighbors.farNeighbors.map(neighborToSerializableObject),
+    activityPubNeighbors: neighbors.activityPubNeighbors.map(neighborToSerializableObject),
+    atProtoNeighbors: neighbors.atProtoNeighbors.map(neighborToSerializableObject),
   };
 }
 
 function neighborToSerializableObject(neighbor: Neighbor): any {
   return {
     actorId: actorIdToSerializableObject(neighbor.actorId),
-    followCount: neighbor.followCount,
+    score: neighbor.score,
   };
 }
 
 function serializableObjectToNeighbors(obj: any): Neighbors|undefined {
-  if (obj && obj.closeNeighbors && obj.farNeighbors) {
-    const closeNeighbors = obj.closeNeighbors.map(serializableObjectToNeighbor).filter((neighbor: any) => neighbor !== undefined) as Neighbor[];
-    const farNeighbors = obj.farNeighbors.map(serializableObjectToNeighbor).filter((neighbor: any) => neighbor !== undefined) as Neighbor[];
+  if (obj) {
+    const activityPubNeighbors = obj.activityPubNeighbors ?
+      obj.activityPubNeighbors.map(serializableObjectToNeighbor).filter((neighbor: any) => neighbor !== undefined) as Neighbor[] : [];
+    const atProtoNeighbors = obj.atProtoNeighbors ?
+      obj.atProtoNeighbors.map(serializableObjectToNeighbor).filter((neighbor: any) => neighbor !== undefined) as Neighbor[] : [];
     return {
-      closeNeighbors,
-      farNeighbors,
+      activityPubNeighbors,
+      atProtoNeighbors,
     };
   }
   return undefined;
 }
 
 function serializableObjectToNeighbor(obj: any): Neighbor|undefined {
-  if (obj && obj.actorId && obj.followCount) {
+  if (obj && obj.actorId && obj.score) {
     const actorId = serializableObjectToActorId(obj.actorId);
     if (actorId) {
       return {
         actorId,
-        followCount: obj.followCount,
+        score: obj.score,
       };
     }
   }

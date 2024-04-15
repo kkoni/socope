@@ -1,10 +1,11 @@
 import { LongLivedDataStorage, StorageManager, getStorageManager } from '../lib/storage';
-import { Queue } from '../lib/util';
-import { ActorId, GroupId } from '../data';
+import { GroupId } from '../data';
 import {
   NeighborCrawlResult,
   NeighborCrawlStatus,
-  NeighborCrawlFollowsFetchParams,
+  NeighborCrawlFollowsFetchQueue,
+  NeighborCrawlFollowsFetchBuffer,
+  NeighborCrawlDataSet,
   deserializeNeighborCrawlResult,
   serializeNeighborCrawlResult
 } from './data';
@@ -12,8 +13,6 @@ import {
 interface Singletons {
   neighborCrawlResultRepository: NeighborCrawlResultRepository;
   neighborCrawlStatusRepository: NeighborCrawlStatusRepository;
-  neighborCrawlFollowsFetchQueue: NeighborCrawlFollowsFetchQueue;
-  neighborCrawlFollowsFetchBuffer: NeighborCrawlFollowsFetchBuffer;
 }
 
 const singletons = {} as Singletons;
@@ -34,26 +33,12 @@ export function getNeighborCrawlStatusRepository(): NeighborCrawlStatusRepositor
   return singletons.neighborCrawlStatusRepository;
 }
 
-export function getNeighborCrawlFollowsFetchQueue(): NeighborCrawlFollowsFetchQueue {
-  if (!singletons.neighborCrawlFollowsFetchQueue) {
-    singletons.neighborCrawlFollowsFetchQueue = new NeighborCrawlFollowsFetchQueue();
-  }
-  return singletons.neighborCrawlFollowsFetchQueue;
-}
-
-export function getNeighborCrawlFollowsFetchBuffer(): NeighborCrawlFollowsFetchBuffer {
-  if (!singletons.neighborCrawlFollowsFetchBuffer) {
-    singletons.neighborCrawlFollowsFetchBuffer = new NeighborCrawlFollowsFetchBuffer();
-  }
-  return singletons.neighborCrawlFollowsFetchBuffer;
-}
-
 export class NeighborCrawlResultRepository {
   private static storageKeyPrefix = 'NeighborCrawlResultRepository.storage';
 
   private storage: LongLivedDataStorage<NeighborCrawlResult>;
 
-  constructor(private storageManager: StorageManager) {
+  constructor(storageManager: StorageManager) {
     this.storage = new LongLivedDataStorage(
       NeighborCrawlResultRepository.storageKeyPrefix,
       storageManager,
@@ -81,63 +66,73 @@ export class NeighborCrawlResultRepository {
 
 export class NeighborCrawlStatusRepository {
   private status?: NeighborCrawlStatus;
+  private activityPubFetchFinished: boolean = false;
+  private atProtoFetchFinished: boolean = false;
+  private activityPubFollowsFetchQueue: NeighborCrawlFollowsFetchQueue = new NeighborCrawlFollowsFetchQueue();
+  private atProtoFollowsFetchQueue: NeighborCrawlFollowsFetchQueue = new NeighborCrawlFollowsFetchQueue();
+  private followsFetchBuffer: NeighborCrawlFollowsFetchBuffer = new NeighborCrawlFollowsFetchBuffer();
+  private activityPubDataSet?: NeighborCrawlDataSet;
+  private atProtoDataSet?: NeighborCrawlDataSet;
 
-  store(status: NeighborCrawlStatus): void {
+  initializeCrawl(status: NeighborCrawlStatus, activityPubDataSet?: NeighborCrawlDataSet, atProtoDataSet?: NeighborCrawlDataSet): void {
     this.status = status;
+    this.activityPubDataSet = activityPubDataSet;
+    this.atProtoDataSet = atProtoDataSet;
+    this.activityPubFetchFinished = false;
+    this.atProtoFetchFinished = false;
+    this.activityPubFollowsFetchQueue.clear();
+    this.atProtoFollowsFetchQueue.clear();
+    this.followsFetchBuffer.clear();
   }
 
   get(): NeighborCrawlStatus|undefined {
     return this.status;
   }
 
+  getActivityPubDataSet(): NeighborCrawlDataSet|undefined {
+    return this.activityPubDataSet;
+  }
+
+  getAtProtoDataSet(): NeighborCrawlDataSet|undefined {
+    return this.atProtoDataSet;
+  }
+
+  getActivityPubFollowsFetchQueue(): NeighborCrawlFollowsFetchQueue {
+    return this.activityPubFollowsFetchQueue;
+  }
+
+  getAtProtoFollowsFetchQueue(): NeighborCrawlFollowsFetchQueue { 
+    return this.atProtoFollowsFetchQueue;
+  }
+
+  getFollowsFetchBuffer(): NeighborCrawlFollowsFetchBuffer {
+    return this.followsFetchBuffer;
+  }
+
+  isActivityPubFetchFinished(): boolean {
+    return this.activityPubFetchFinished;
+  }
+
+  setActivityPubFetchFinished(): void {
+    this.activityPubFetchFinished = true;
+  }
+
+  isAtProtoFetchFinished(): boolean {
+    return this.atProtoFetchFinished;
+  }
+
+  setAtProtoFetchFinished(): void {
+    this.atProtoFetchFinished = true;
+  }
+
   delete(): void {
     this.status = undefined;
-  }
-}
-
-export class NeighborCrawlFollowsFetchQueue {
-  private static queueLimit = 1000;
-
-  private queue: Queue<NeighborCrawlFollowsFetchParams> = new Queue(NeighborCrawlFollowsFetchQueue.queueLimit);
-
-  enqueue(params: NeighborCrawlFollowsFetchParams): boolean {
-    return this.queue.enqueue(params);
-  }
-
-  dequeue(): NeighborCrawlFollowsFetchParams|undefined {
-    return this.queue.dequeue();
-  }
-
-  isEmpty(): boolean {
-    return this.queue.isEmpty() ?? true;
-  }
-
-  clear(): void {
-    this.queue.clear();
-  }
-}
-
-export class NeighborCrawlFollowsFetchBuffer {
-  private buffer: Map<string, ActorId[]> = new Map();
-
-  add(actorId: ActorId, followedIds: ActorId[]) {
-    let buffered = this.buffer.get(actorId.toString());
-    if (buffered === undefined) {
-      this.buffer.set(actorId.toString(), [...followedIds]);
-    } else {
-      buffered.push(...followedIds);
-    }
-  }
-
-  get(actorId: ActorId): ActorId[]|undefined {
-    return this.buffer.get(actorId.toString());
-  }
-
-  delete(actorId: ActorId): void {
-    this.buffer.delete(actorId.toString());
-  }
-
-  clear(): void {
-    this.buffer.clear();
+    this.activityPubFetchFinished = false;
+    this.atProtoFetchFinished = false;
+    this.activityPubDataSet = undefined;
+    this.atProtoDataSet = undefined;
+    this.activityPubFollowsFetchQueue.clear();
+    this.atProtoFollowsFetchQueue.clear();
+    this.followsFetchBuffer.clear();
   }
 }

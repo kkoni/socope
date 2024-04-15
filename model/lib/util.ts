@@ -45,6 +45,7 @@ export class Queue<T> {
       const value = this.queue[this.head];
       this.head = (this.head + 1) % this.limit;
       this.size--;
+      console.log('dequeue head=' + this.head + ' size=' + this.size);
       return value;
     }
   }
@@ -55,6 +56,10 @@ export class Queue<T> {
 
   public isEmpty(): boolean {
     return this.size === 0;
+  }
+
+  public getSize(): number {
+    return this.size;
   }
 
   public clear(): void {

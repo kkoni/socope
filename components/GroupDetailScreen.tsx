@@ -10,6 +10,8 @@ import { getActorRepository, getGroupRepository, getNeighborsRepository } from '
 import { NeighborCrawlStatus, NeighborCrawlResult } from '../model/worker/data';
 import { getNeighborCrawlStatusRepository, getNeighborCrawlResultRepository } from '../model/worker/repositories';
 
+const neighborCountToShow = 20;
+
 export default function GroupDetailScreen() {
   const [ selectedGroupId ] = useRecoilState(selectedGroupIdState);
   const [ currentNeighborCrawlStatus ] = useRecoilState(currentNeighborCrawlStatusState)
@@ -42,7 +44,11 @@ export default function GroupDetailScreen() {
       setNeighbors(neighbors);
       if (neighbors !== undefined) {
         const closeNeighbors = new Map<string, Actor>();
-        for (const neighbor of neighbors.closeNeighbors) {
+        const neighborsToShow = [
+          ...neighbors.activityPubNeighbors.slice(0, neighborCountToShow),
+          ...neighbors.atProtoNeighbors.slice(0, neighborCountToShow),
+        ];
+        for (const neighbor of neighborsToShow) {
           const actor = await getActorRepository().get(neighbor.actorId);
           if (actor !== undefined) {
             closeNeighbors.set(actor.id.toString(), actor);
@@ -183,7 +189,10 @@ function GroupDetailView(props: GroupDetailViewProps) {
   const atProtoActorViews = props.group.actorIds.filter(aid => aid.snsType === SNSTypes.ATProto).map(actorId => {
     return createActorView(actorId, props.actors.get(actorId.toString()));
   });
-  const closeNeighborViews = props.neighbors === undefined ? [] : props.neighbors.closeNeighbors.map(neighbor => {
+  const activityPubNeighborViews = props.neighbors === undefined ? [] : props.neighbors.activityPubNeighbors.slice(0, neighborCountToShow).map(neighbor => {
+    return createActorView(neighbor.actorId, props.closeNeighbors.get(neighbor.actorId.toString()));
+  });
+  const atProtoNeighborViews = props.neighbors === undefined ? [] : props.neighbors.atProtoNeighbors.slice(0, neighborCountToShow).map(neighbor => {
     return createActorView(neighbor.actorId, props.closeNeighbors.get(neighbor.actorId.toString()));
   });
 
@@ -222,10 +231,21 @@ function GroupDetailView(props: GroupDetailViewProps) {
           { !props.neighborCrawlResult.isSucceeded && (<Text>Error: {props.neighborCrawlResult.error}</Text>)}
         </View>
       )}
-      { props.neighbors && props.neighbors.closeNeighbors.length > 0 && (
+      { (activityPubNeighborViews.length > 0 || atProtoNeighborViews.length > 0) && (
         <View>
           <Text variant="titleLarge">CloseNeighbors</Text>
-          { closeNeighborViews }
+          { activityPubNeighborViews.length > 0 && (
+            <View>
+              <Text variant="titleSmall">ActivityPub</Text>
+              { activityPubNeighborViews }
+            </View>
+          )}
+          { atProtoNeighborViews.length > 0 && (
+            <View>
+              <Text variant="titleSmall">ATProto</Text>
+              { atProtoNeighborViews }
+            </View>
+          )}
         </View>
       )}
     </ScrollView>
@@ -418,7 +438,10 @@ function GroupEditorView(props: GroupEditorViewProps) {
       </View>
     </View>
   );
-  const closeNeighborViews = props.neighbors === undefined ? [] : props.neighbors.closeNeighbors.map(neighbor => {
+  const activityPubNeighborViews = props.neighbors === undefined ? [] : props.neighbors.activityPubNeighbors.slice(0, neighborCountToShow).map(neighbor => {
+    return createNeighborView(neighbor.actorId, props.closeNeighbors.get(neighbor.actorId.toString()));
+  });
+  const atProtoNeighborViews = props.neighbors === undefined ? [] : props.neighbors.atProtoNeighbors.slice(0, neighborCountToShow).map(neighbor => {
     return createNeighborView(neighbor.actorId, props.closeNeighbors.get(neighbor.actorId.toString()));
   });
 
@@ -457,10 +480,21 @@ function GroupEditorView(props: GroupEditorViewProps) {
           { atProtoActorViews }
         </View>
       )}
-      { closeNeighborViews.length > 0 && (
+      { (activityPubNeighborViews.length > 0 || atProtoNeighborViews.length > 0) && (
         <View style={groupEditorStyles.actorListView}>
-          <Text variant="titleSmall" style={groupEditorStyles.actorListViewHeader}>CloseNeighbors</Text>
-          { closeNeighborViews }
+          <Text variant="titleLarge" style={groupEditorStyles.actorListViewHeader}>CloseNeighbors</Text>
+          { activityPubNeighborViews.length > 0 && (
+            <View>
+              <Text variant="titleSmall">ActivityPub</Text>
+              { activityPubNeighborViews }
+            </View>
+          )}
+          { atProtoNeighborViews.length > 0 && (
+            <View>
+              <Text variant="titleSmall">ATProto</Text>
+              { atProtoNeighborViews }
+            </View>
+          )}
         </View>
       )}
       <Portal>
