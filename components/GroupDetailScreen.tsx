@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useRecoilState } from 'recoil';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { Avatar, Button, Portal, Snackbar, Text, TextInput } from 'react-native-paper';
 import { useNavigation } from '@react-navigation/native';
+import { linkHandler } from '../model/lib/util';
 import { selectedGroupIdState, allGroupsState, jumpedGroupIdState, currentNeighborCrawlStatusState } from '../states';
 import { updateGroup, deleteGroup } from '../facades';
 import { Actor, ActorId, Group, SNSTypes, Neighbors } from '../model/data';
@@ -165,17 +166,19 @@ function GroupDetailView(props: GroupDetailViewProps) {
 
   const createActorView = (actorId: ActorId, actor: Actor|undefined) => (
     <View key={actorId.toString()} style={groupDetailStyles.actorView}>
-      { actor?.icon &&
-        <View style={groupDetailStyles.actorIconView}>
-          <Avatar.Image source={{uri: actor.icon}} size={48}/>
-        </View>
+      { actor !== undefined &&
+        <Pressable style={groupDetailStyles.actorPressable} onPress={() => linkHandler(actor.uri)}>
+          { actor?.icon &&
+            <View>
+              <Avatar.Image source={{uri: actor.icon}} size={48}/>
+            </View>
+          }
+          <View style={groupDetailStyles.actorNameView}>
+            <Text>{actor.name} ({actor.handle})</Text>
+          </View>
+        </Pressable>
       }
-      { actor &&
-        <View style={groupDetailStyles.actorNameView}>
-          <Text>{actor.name} ({actor.handle})</Text>
-        </View>
-      }
-      { !actor &&
+      { actor === undefined &&
         <View style={groupDetailStyles.actorIdView}>
           <Text>{actorId.value}</Text>
         </View>
@@ -254,10 +257,10 @@ function GroupDetailView(props: GroupDetailViewProps) {
 
 const groupDetailStyles = StyleSheet.create({
   editButtonsView: { marginTop: 10, marginBottom: 10, flexDirection: 'row', justifyContent: 'flex-end' },
-  actorView: { flexDirection: 'row' },
-  actorIconView: { flex: 1 },
-  actorNameView: { flex: 3, justifyContent: 'center', marginLeft: 10 },
-  actorIdView: { flex: 4, justifyContent: 'center' },
+  actorView: { flexDirection: 'row'},
+  actorPressable: { flex: 1, flexDirection: 'row' },
+  actorNameView: { flex: 1, justifyContent: 'center', marginLeft: 10 },
+  actorIdView: { flex: 1, justifyContent: 'center' },
   actorRemoveView: { flex: 2, justifyContent: 'center' },
   actorRemoveButton: { padding: 0 },
   actorListView: { marginTop: 10 },
@@ -383,17 +386,19 @@ function GroupEditorView(props: GroupEditorViewProps) {
       key={actorStatus.actorId.toString()}
       style={actorStatus.status === 'removed' ? groupEditorStyles.removedActorView : groupEditorStyles.actorView}
     >
-      { actorStatus.actor?.icon &&
-        <View style={groupEditorStyles.actorIconView}>
-          <Avatar.Image source={{uri: actorStatus.actor.icon}} size={48}/>
-        </View>
+      { actorStatus.actor !== undefined &&
+        <Pressable style={groupEditorStyles.actorPressable} onPress={() => linkHandler(actorStatus.actor!.uri)}>
+          { actorStatus.actor?.icon &&
+            <View>
+              <Avatar.Image source={{uri: actorStatus.actor.icon}} size={48}/>
+            </View>
+          }
+          <View style={groupEditorStyles.actorNameView}>
+            <Text>{actorStatus.actor.name} ({actorStatus.actor.handle})</Text>
+          </View>
+        </Pressable>
       }
-      { actorStatus.actor &&
-        <View style={groupEditorStyles.actorNameView}>
-          <Text>{actorStatus.actor.name} ({actorStatus.actor.handle})</Text>
-        </View>
-      }
-      { !actorStatus.actor &&
+      { actorStatus.actor === undefined &&
         <View style={groupEditorStyles.actorIdView}>
           <Text>{actorStatus.actorId.value}</Text>
         </View>
@@ -418,17 +423,19 @@ function GroupEditorView(props: GroupEditorViewProps) {
   
   const createNeighborView = (actorId: ActorId, actor: Actor|undefined) => (
     <View key={actorId.toString()} style={groupEditorStyles.actorView}>
-      { actor?.icon &&
-        <View style={groupEditorStyles.actorIconView}>
-          <Avatar.Image source={{uri: actor.icon}} size={48}/>
-        </View>
+      { actor !== undefined &&
+        <Pressable style={groupEditorStyles.actorPressable} onPress={() => linkHandler(actor.uri)}>
+          { actor?.icon &&
+            <View>
+              <Avatar.Image source={{uri: actor.icon}} size={48}/>
+            </View>
+          }
+          <View style={groupEditorStyles.actorNameView}>
+            <Text>{actor.name} ({actor.handle})</Text>
+          </View>
+        </Pressable>
       }
-      { actor &&
-        <View style={groupEditorStyles.actorNameView}>
-          <Text>{actor.name} ({actor.handle})</Text>
-        </View>
-      }
-      { !actor &&
+      { actor === undefined &&
         <View style={groupEditorStyles.actorIdView}>
           <Text>{actorId.value}</Text>
         </View>
@@ -527,8 +534,8 @@ const groupEditorStyles = StyleSheet.create({
   addButton: { marginTop: 10, marginBottom: 10 },
   actorView: { flexDirection: 'row' },
   removedActorView: { flexDirection: 'row', backgroundColor: 'gray' },
-  actorIconView: { flex: 1 },
-  actorNameView: { flex: 3, justifyContent: 'center', marginLeft: 10 },
+  actorPressable: { flex: 4, flexDirection: 'row' },
+  actorNameView: { flex: 1, justifyContent: 'center', marginLeft: 10 },
   actorIdView: { flex: 4, justifyContent: 'center' },
   actorStatusView: { flex: 1, justifyContent: 'center' },
   actorButtonView: { flex: 2, justifyContent: 'center' },

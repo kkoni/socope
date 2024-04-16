@@ -1,3 +1,5 @@
+import { Linking } from 'react-native';
+
 export function getEpochSeconds(): number {
   return Math.floor(Date.now() / 1000);
 }
@@ -68,3 +70,11 @@ export class Queue<T> {
     this.tail = 0;
   }
 }
+
+export async function linkHandler(url: string) {
+  if (await Linking.canOpenURL(url)) {
+    await Linking.openURL(url);
+  } else {
+    console.error('Cannot open URL: ' + url);
+  }
+};
