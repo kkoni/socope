@@ -1,5 +1,4 @@
-import { BskyAgent, stringifyLex, jsonToLex } from '@atproto/api';
-import { ProfileViewDetailed } from '@atproto/api/dist/client/types/app/bsky/actor/defs';
+import { BskyAgent, AppBskyActorDefs, AppBskyFeedDefs, stringifyLex, jsonToLex } from '@atproto/api';
 import { Cache, CachedStorage, EphemeralDataStorage, StorageManager, getStorageManager } from '../lib/storage';
 import { serializeProfile, deserializeProfile } from './data';
 
@@ -7,6 +6,7 @@ interface Singletons {
   bskyAgent?: BskyAgent;
   actorRepository?: ActorRepository;
   followsClient?: FollowsClient;
+  feedClient?: FeedClient;
 }
 
 const singletons = {} as Singletons;
@@ -34,13 +34,20 @@ export function getFollowsClient(): FollowsClient {
   return singletons.followsClient;
 }
 
+export function getFeedClient(): FeedClient {
+  if (!singletons.feedClient) {
+    singletons.feedClient = new FeedClient();
+  }
+  return singletons.feedClient;
+}
+
 export class ActorRepository {
   private static storageKeyPrefix = 'activity-pub.ActorRepository.storage';
   private static storageTTL = 60 * 60 * 24 * 2;
   private static cacheTTL = 60 * 60 * 24;
   private static cacheMaxKeys = 100000;
 
-  private storage: CachedStorage<ProfileViewDetailed>;
+  private storage: CachedStorage<AppBskyActorDefs.ProfileViewDetailed>;
 
   constructor(storageManager: StorageManager) {
     this.storage = new CachedStorage(
@@ -60,7 +67,7 @@ export class ActorRepository {
     );
   }
 
-  async fetch(id: string): Promise<ProfileViewDetailed|undefined> {
+  async fetch(id: string): Promise<AppBskyActorDefs.ProfileViewDetailed|undefined> {
     try {
       const agent = getBskyAgent();
       const response = await agent.getProfile({actor: id});
@@ -80,7 +87,7 @@ export class ActorRepository {
     }
   }
 
-  async get(id: string): Promise<ProfileViewDetailed|undefined> {
+  async get(id: string): Promise<AppBskyActorDefs.ProfileViewDetailed|undefined> {
     const cached = await this.storage.get(id);
     if (cached !== undefined) {
       return cached.value;
@@ -102,6 +109,18 @@ export class FollowsClient {
       return {followedIds: response.data.follows.map((p) => p.did), cursor: response.data.cursor};
     } else {
       throw new Error('BlueSky getFollows error: unknown');
+    }
+  }
+}
+
+export class FeedClient {
+  async fetchAuthorFeed(actorId: string, limit: number, cursor?: string): Promise<AppBskyFeedDefs.FeedViewPost[]> {
+    const agent = getBskyAgent();
+    const response = await agent.getAuthorFeed({actor: actorId, limit, cursor});
+    if (response.success) {
+      return response.data.feed;
+    } else {
+      throw new Error('BlueSky getTimeline error: unknown');
     }
   }
 }

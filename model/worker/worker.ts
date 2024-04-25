@@ -5,7 +5,10 @@ import {
   getActorRepository as getActivityPubActorRepository,
   getFollowingClient as getActivityPubFollowingClient,
 } from '../activity-pub/repositories';
-import { getFollowsClient as getATProtoFollowsClient } from '../atproto/repositories';
+import {
+  getFollowsClient as getATProtoFollowsClient,
+  getFeedClient as getATProtoFeedClient,
+} from '../atproto/repositories';
 import {
   NeighborCrawlStatus,
   NeighborCrawlFollowsFetchParams,
@@ -19,6 +22,7 @@ import {
 
 let neighborCrawlStartWorker: NeighborCrawlStartWorker|undefined;
 let neighborCrawlWorker: NeighborCrawlWorker|undefined;
+let feedFetchWorker: FeedFetchWorker|undefined;
 
 export function startWorkers(setCurrentNeighborCrawlStatus: (status: NeighborCrawlStatus|undefined) => void) {
   if (neighborCrawlStartWorker === undefined) {
@@ -29,11 +33,16 @@ export function startWorkers(setCurrentNeighborCrawlStatus: (status: NeighborCra
     neighborCrawlWorker = new NeighborCrawlWorker(setCurrentNeighborCrawlStatus);
     neighborCrawlWorker.start();
   }
+  if (feedFetchWorker === undefined) {
+    feedFetchWorker = new FeedFetchWorker();
+    feedFetchWorker.start();
+  }
 }
 
 export function stopWorkers() {
   neighborCrawlStartWorker?.stop();
   neighborCrawlWorker?.stop();
+  feedFetchWorker?.stop();
 }
 
 class NeighborCrawlStartWorker {
@@ -432,5 +441,41 @@ class NeighborCrawlWorker {
     getNeighborCrawlStatusRepository().delete();
     this.setCurrentNeighborCrawlStatus(undefined);
     console.log('Fail neighbor crawl for group ' + status.groupId.toString());
+  }
+}
+
+class FeedFetchWorker {
+  private static intervalMillis = 60000;
+
+  private clearInterval: any|undefined;
+  
+  start(){
+    this.execute();
+    this.clearInterval = setInterval(() => { this.execute(); }, FeedFetchWorker.intervalMillis);
+  }
+
+  stop() {
+    if (this.clearInterval !== undefined) {
+      clearInterval(this.clearInterval);
+    }
+  }
+
+  private async execute(): Promise<void> {
+    try {
+      const groupRepository = await getGroupRepository();
+      for (const group of (await groupRepository.getAll())) {
+        await this.fetchFeed(group.actorIds[0]);
+      }
+    } catch(e) {
+      console.error('FeedFetchWorker error', e);
+    }
+  }
+
+  private async fetchFeed(actorId: ActorId): Promise<void> {
+    if (actorId.snsType === SNSTypes.ATProto) {
+      const client = getATProtoFeedClient();
+      const feed = await client.fetchAuthorFeed(actorId.value, 1);
+      console.log('FeedFetchWorker.fetchFeed of actor=' + actorId.toString(), feed);
+    }
   }
 }

@@ -1,4 +1,4 @@
-import { ProfileViewDetailed } from '@atproto/api/dist/client/types/app/bsky/actor/defs';
+import { AppBskyActorDefs } from '@atproto/api';
 import { Actor as ActivityPubActor, getHandle, handleToAcctUri } from './activity-pub/data';
 import { getActorRepository as getActivityPubActorRepository } from './activity-pub/repositories';
 import { getActorRepository as getATProtoActorRepository } from './atproto/repositories';
@@ -9,7 +9,6 @@ import {
   ActorId,
   Group,
   GroupId,
-  Neighbor,
   Neighbors,
   SNSType,
   SNSTypes,
@@ -104,7 +103,7 @@ export class ActorRepository {
     };
   }
 
-  private convertATProtoActor(actor: ProfileViewDetailed): Actor {
+  private convertATProtoActor(actor: AppBskyActorDefs.ProfileViewDetailed): Actor {
     return {
       id: new ActorId(SNSTypes.ATProto, actor.did),
       uri: `https://bsky.app/profile/${actor.handle}`,

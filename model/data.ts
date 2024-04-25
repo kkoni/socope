@@ -1,5 +1,4 @@
 import deepEqual from 'deep-equal';
-import { toEpochSeconds, epochSecondsToDate } from './lib/util';
 
 export const SNSTypes = {
   ActivityPub: "ActivityPub",
@@ -160,83 +159,22 @@ export function deserializePostId(s: string): PostId|undefined {
 
 export interface Post {
   id: PostId;
-  uri: string;
-  postedAt: Date;
-  ownerId: ActorId;
-  content: string;
-  images: EmbededImage[];
+  rawData: any;
+  authorId: ActorId;
+  createdAt?: Date;
+  embeddedPostId?: PostId;
+  reply?: Reply;
+  repost?: Repost;
 }
 
-export interface EmbededImage {
-  uri: string;
-  mediaType?: string;
-  width?: number;
-  height?: number;
-  alt?: string;
+export interface Reply {
+  rootPostId: PostId;
+  parentPostId: PostId;
 }
 
-function embededImageToSerializableObject(image: EmbededImage): any {
-  return {
-    uri: image.uri,
-    mediaType: image.mediaType,
-    width: image.width,
-    height: image.height,
-    alt: image.alt,
-  };
-}
-
-function serializableObjectToEmbededImage(obj: any): EmbededImage|undefined {
-  if (obj && obj.uri) {
-    return {
-      uri: obj.uri,
-      mediaType: obj.mediaType,
-      width: obj.width,
-      height: obj.height,
-      alt: obj.alt,
-    };
-  }
-  return undefined;
-}
-
-function postToSerializableObject(post: Post): any {
-  return {
-    id: postIdToSerializableObject(post.id),
-    uri: post.uri,
-    postedAt: toEpochSeconds(post.postedAt),
-    ownerId: actorIdToSerializableObject(post.ownerId),
-    content: post.content,
-    images: post.images.map(embededImageToSerializableObject),
-  };
-}
-
-function serilalizableObjectToPost(obj: any): Post|undefined {
-  if (obj && obj.id && obj.uri && obj.postedAt && obj.ownerId && obj.content && obj.images) {
-    const id = serializableObjectToPostId(obj.id);
-    if (id) {
-      const postedAt = epochSecondsToDate(obj.postedAt);
-      const ownerId = serializableObjectToActorId(obj.ownerId);
-      if (ownerId) {
-        const images = obj.images.map(serializableObjectToEmbededImage).filter((image: any) => image !== undefined) as EmbededImage[];
-        return {
-          id,
-          uri: obj.uri,
-          postedAt,
-          ownerId,
-          content: obj.content,
-          images,
-        };
-      }
-    }
-  }
-  return undefined;
-}
-
-export function serializePost(post: Post): string {
-  return JSON.stringify(postToSerializableObject(post));
-}
-
-export function deserializePost(s: string): Post|undefined {
-  return serilalizableObjectToPost(JSON.parse(s));
+export interface Repost {
+  by : ActorId;
+  indexedAt: Date;
 }
 
 export class GroupId {
