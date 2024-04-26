@@ -6,7 +6,18 @@
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "test": "jest"
+  },
+  "jest": {
+    "preset": "react-native",
+    "testMatch": [ "**/*.test.ts" ],
+    "moduleFileExtensions": [ "ts", "tsx", "js" ],
+    "globals": {
+      "ts-jest": {
+        "tsConfig": "tsconfig.json"
+      }
+    }
   },
   "dependencies": {
     "@atproto/api": "^0.9.6",
@@ -40,6 +51,7 @@
   "devDependencies": {
     "@babel/core": "^7.20.0",
     "@types/react": "~18.2.45",
+    "ts-jest": "^29.1.2",
     "typescript": "^5.1.3"
   },
   "private": true

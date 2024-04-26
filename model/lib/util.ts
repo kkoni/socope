@@ -71,6 +71,76 @@ export class Queue<T> {
   }
 }
 
+export class PriorityQueue<T> {
+  private queue: { value: T, priority: number }[] = [];
+  private limit: number;
+
+  constructor(limit: number) {
+    this.limit = limit;
+  }
+
+  public enqueue(value: T, priority: number): boolean {
+    if (this.isFull()) {
+      return false;
+    }
+    let ptr = this.queue.length;
+    this.queue.push({value, priority});
+    while (ptr > 0) {
+      const parentIdx = Math.floor((ptr - 1) / 2);
+      if (this.queue[parentIdx].priority <= priority) {
+        break;
+      }
+      this.queue[ptr] = this.queue[parentIdx];
+      ptr = parentIdx;
+    }
+    this.queue[ptr] = {value, priority};
+    return true;
+  }
+
+  public dequeue(): { value: T, priority: number }|undefined {
+    if (this.isEmpty()) {
+      return undefined;
+    }
+    const ret = this.queue[0];
+    const popped = this.queue.pop();
+    if (this.queue.length >= 1) {
+      let ptr = 0;
+      while (ptr < this.queue.length) {
+        let childIdx = ptr * 2 + 1;
+        if (childIdx >= this.queue.length) {
+          break;
+        }
+        let smallerChildIdx = (
+          childIdx + 1 < this.queue.length &&
+          this.queue[childIdx + 1].priority < this.queue[childIdx].priority
+        ) ? childIdx + 1 : childIdx;
+        if (this.queue[smallerChildIdx].priority >= popped!.priority) {
+          break;
+        }
+        this.queue[ptr] = this.queue[smallerChildIdx];
+        ptr = smallerChildIdx;
+      }
+      this.queue[ptr] = popped!;
+    }
+    return ret;
+  }
+
+  public getHead(): { value: T, priority: number }|undefined {
+    if (this.isEmpty()) {
+      return undefined;
+    }
+    return this.queue[0];
+  }
+
+  public isEmpty() {
+    return this.queue.length === 0;
+  }
+
+  public isFull() {
+    return this.queue.length >= this.limit;
+  }
+}
+
 export async function linkHandler(url: string) {
   if (await Linking.canOpenURL(url)) {
     await Linking.openURL(url);
