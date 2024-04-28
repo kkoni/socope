@@ -18,10 +18,13 @@ import {
 import {
   getNeighborCrawlResultRepository,
   getNeighborCrawlStatusRepository,
+  getFeedFetchQueue,
+  getFeedFetchResultRepository,
 } from './repositories';
 
 let neighborCrawlStartWorker: NeighborCrawlStartWorker|undefined;
 let neighborCrawlWorker: NeighborCrawlWorker|undefined;
+let feedFetchEnqueueWorker: FeedFetchEnqueueWorker|undefined;
 let feedFetchWorker: FeedFetchWorker|undefined;
 
 export function startWorkers(setCurrentNeighborCrawlStatus: (status: NeighborCrawlStatus|undefined) => void) {
@@ -33,6 +36,10 @@ export function startWorkers(setCurrentNeighborCrawlStatus: (status: NeighborCra
     neighborCrawlWorker = new NeighborCrawlWorker(setCurrentNeighborCrawlStatus);
     neighborCrawlWorker.start();
   }
+  if (feedFetchEnqueueWorker === undefined) {
+    feedFetchEnqueueWorker = new FeedFetchEnqueueWorker();
+    feedFetchEnqueueWorker.start();
+  }
   if (feedFetchWorker === undefined) {
     feedFetchWorker = new FeedFetchWorker();
     feedFetchWorker.start();
@@ -42,6 +49,7 @@ export function startWorkers(setCurrentNeighborCrawlStatus: (status: NeighborCra
 export function stopWorkers() {
   neighborCrawlStartWorker?.stop();
   neighborCrawlWorker?.stop();
+  feedFetchEnqueueWorker?.stop();
   feedFetchWorker?.stop();
 }
 
@@ -444,14 +452,17 @@ class NeighborCrawlWorker {
   }
 }
 
-class FeedFetchWorker {
-  private static intervalMillis = 60000;
+const successFeedFetchIntervalMillis = 10 * 60 * 1000;
+const errorFeedFetchIntervalMillis = 60 * 60 * 1000;
+
+class FeedFetchEnqueueWorker {
+  private static intervalMillis = 600000;
 
   private clearInterval: any|undefined;
-  
-  start(){
+
+  start() {
     this.execute();
-    this.clearInterval = setInterval(() => { this.execute(); }, FeedFetchWorker.intervalMillis);
+    this.clearInterval = setInterval(() => { this.execute(); }, FeedFetchEnqueueWorker.intervalMillis);
   }
 
   stop() {
@@ -463,8 +474,57 @@ class FeedFetchWorker {
   private async execute(): Promise<void> {
     try {
       const groupRepository = await getGroupRepository();
+      const feedFetchQueue = getFeedFetchQueue();
+      const feedFetchResultRepository = await getFeedFetchResultRepository();
       for (const group of (await groupRepository.getAll())) {
-        await this.fetchFeed(group.actorIds[0]);
+        for (const actorId of group.actorIds) {
+          if (!feedFetchQueue.has(actorId)) {
+            const previousResult = await feedFetchResultRepository.get(actorId);
+            if (previousResult === undefined) {
+              feedFetchQueue.enqueue(actorId, new Date());
+            } else if (previousResult.isSucceeded) {
+              feedFetchQueue.enqueue(actorId, new Date(previousResult.fetchedAt.getTime() + successFeedFetchIntervalMillis));
+            } else {
+              feedFetchQueue.enqueue(actorId, new Date(previousResult.fetchedAt.getTime() + errorFeedFetchIntervalMillis));
+            }
+          }
+        }
+      }
+    } catch(e) {
+      console.error('FeedFetchWorker error', e);
+    }
+  }
+}
+
+class FeedFetchWorker {
+  private static intervalMillis = 10000;
+
+  private clearInterval: any|undefined;
+  
+  start(){
+    this.clearInterval = setInterval(() => { this.execute(); }, FeedFetchWorker.intervalMillis);
+  }
+
+  stop() {
+    if (this.clearInterval !== undefined) {
+      clearInterval(this.clearInterval);
+    }
+  }
+
+  private async execute(): Promise<void> {
+    try {
+      const start = Date.now();
+      const feedFetchQueue = getFeedFetchQueue();
+      while (Date.now() - start < FeedFetchWorker.intervalMillis - 1000) {
+        const peeked = feedFetchQueue.peek();
+        if (peeked === undefined || peeked.nextFetchTime.getTime() > Date.now()) {
+          break;
+        }
+        const dequeued = feedFetchQueue.dequeue();
+        if (dequeued === undefined) {
+          break;
+        }
+        await this.fetchFeed(dequeued.actorId);
       }
     } catch(e) {
       console.error('FeedFetchWorker error', e);
@@ -472,10 +532,20 @@ class FeedFetchWorker {
   }
 
   private async fetchFeed(actorId: ActorId): Promise<void> {
+    const feedFetchResultRepository = await getFeedFetchResultRepository();
+    const feedFetchQueue = getFeedFetchQueue();
     if (actorId.snsType === SNSTypes.ATProto) {
+      const previousResult = await feedFetchResultRepository.get(actorId);
       const client = getATProtoFeedClient();
-      const feed = await client.fetchAuthorFeed(actorId.value, 1);
-      console.log('FeedFetchWorker.fetchFeed of actor=' + actorId.toString(), feed);
+      try {
+        const feed = await client.fetchAuthorFeed(actorId.value, 1);
+        await feedFetchResultRepository.store({ actorId, fetchedAt: new Date(), mostRecentlyPostedAt: previousResult?.mostRecentlyPostedAt, isSucceeded: true});
+        feedFetchQueue.enqueue(actorId, new Date(Date.now() + successFeedFetchIntervalMillis));
+      } catch(e) {
+        console.error('FeedFetchWorker error', e);
+        await feedFetchResultRepository.store({ actorId, fetchedAt: new Date(), mostRecentlyPostedAt: previousResult?.mostRecentlyPostedAt, isSucceeded: false})
+        feedFetchQueue.enqueue(actorId, new Date(Date.now() + errorFeedFetchIntervalMillis));
+      }
     }
   }
 }

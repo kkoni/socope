@@ -73,14 +73,17 @@ export class Queue<T> {
 
 export class PriorityQueue<T> {
   private queue: { value: T, priority: number }[] = [];
+  private valueSet: Set<string> = new Set();
   private limit: number;
+  private valueSerializer: (value: T) => string;
 
-  constructor(limit: number) {
+  constructor(limit: number, valueSerializer: (value: T) => string) {
     this.limit = limit;
+    this.valueSerializer = valueSerializer;
   }
 
   public enqueue(value: T, priority: number): boolean {
-    if (this.isFull()) {
+    if (this.isFull() || this.has(value)) {
       return false;
     }
     let ptr = this.queue.length;
@@ -94,6 +97,7 @@ export class PriorityQueue<T> {
       ptr = parentIdx;
     }
     this.queue[ptr] = {value, priority};
+    this.valueSet.add(this.valueSerializer(value));
     return true;
   }
 
@@ -125,11 +129,15 @@ export class PriorityQueue<T> {
     return ret;
   }
 
-  public getHead(): { value: T, priority: number }|undefined {
+  public peek(): { value: T, priority: number }|undefined {
     if (this.isEmpty()) {
       return undefined;
     }
     return this.queue[0];
+  }
+
+  public has(value: T): boolean {
+    return this.valueSet.has(this.valueSerializer(value));
   }
 
   public isEmpty() {

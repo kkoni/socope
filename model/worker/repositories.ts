@@ -1,18 +1,24 @@
-import { LongLivedDataStorage, StorageManager, getStorageManager } from '../lib/storage';
-import { GroupId } from '../data';
+import { EphemeralDataStorage, LongLivedDataStorage, StorageManager, getStorageManager } from '../lib/storage';
+import { PriorityQueue } from '../lib/util';
+import { ActorId, GroupId } from '../data';
 import {
+  FeedFetchResult,
   NeighborCrawlResult,
   NeighborCrawlStatus,
   NeighborCrawlFollowsFetchQueue,
   NeighborCrawlFollowsFetchBuffer,
   NeighborCrawlDataSet,
   deserializeNeighborCrawlResult,
-  serializeNeighborCrawlResult
+  serializeNeighborCrawlResult,
+  deserializeFeedFetchResult,
+  serializeFeedFetchResult,
 } from './data';
 
 interface Singletons {
   neighborCrawlResultRepository: NeighborCrawlResultRepository;
   neighborCrawlStatusRepository: NeighborCrawlStatusRepository;
+  feedFetchResultRepository: FeedFetchResultRepository;
+  feedFetchQueue: FeedFetchQueue;
 }
 
 const singletons = {} as Singletons;
@@ -31,6 +37,21 @@ export function getNeighborCrawlStatusRepository(): NeighborCrawlStatusRepositor
     singletons.neighborCrawlStatusRepository = new NeighborCrawlStatusRepository();
   }
   return singletons.neighborCrawlStatusRepository;
+}
+
+export async function getFeedFetchResultRepository(): Promise<FeedFetchResultRepository> {
+  if (!singletons.feedFetchResultRepository) {
+    const storageManager = await getStorageManager();
+    singletons.feedFetchResultRepository = new FeedFetchResultRepository(storageManager);
+  }
+  return singletons.feedFetchResultRepository;
+}
+
+export function getFeedFetchQueue(): FeedFetchQueue {
+  if (!singletons.feedFetchQueue) {
+    singletons.feedFetchQueue = new FeedFetchQueue();
+  }
+  return singletons.feedFetchQueue;
 }
 
 export class NeighborCrawlResultRepository {
@@ -134,5 +155,52 @@ export class NeighborCrawlStatusRepository {
     this.activityPubFollowsFetchQueue.clear();
     this.atProtoFollowsFetchQueue.clear();
     this.followsFetchBuffer.clear();
+  }
+}
+
+export class FeedFetchResultRepository {
+  private static storageKeyPrefix = 'FeedFetchResultRepository.storage';
+  private static storageTTL = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+  private storage: EphemeralDataStorage<FeedFetchResult>;
+
+  constructor(storageManager: StorageManager) {
+    this.storage = new EphemeralDataStorage(
+      FeedFetchResultRepository.storageKeyPrefix,
+      FeedFetchResultRepository.storageTTL,
+      storageManager,
+      serializeFeedFetchResult,
+      deserializeFeedFetchResult,
+    );
+  }
+
+  async store(result: FeedFetchResult): Promise<void> {
+    await this.storage.store(result.actorId.toString(), result, Date.now());
+  }
+
+  async get(actorId: ActorId): Promise<FeedFetchResult|undefined> {
+    return (await this.storage.get(actorId.toString()))?.value;
+  }
+}
+
+export class FeedFetchQueue {
+  private queue: PriorityQueue<ActorId> = new PriorityQueue<ActorId>(10000, (value: ActorId) => value.toString());
+
+  enqueue(actorId: ActorId, nextFetchTime: Date): void {
+    this.queue.enqueue(actorId, nextFetchTime.getDate());
+  }
+
+  peek(): { actorId: ActorId, nextFetchTime: Date }|undefined {
+    const result = this.queue.peek();
+    return result ? { actorId: result.value, nextFetchTime: new Date(result.priority) } : undefined;
+  }
+
+  dequeue(): { actorId: ActorId, nextFetchTime: Date }|undefined {
+    const result = this.queue.dequeue();
+    return result ? { actorId: result.value, nextFetchTime: new Date(result.priority) } : undefined;
+  }
+
+  has(actorId: ActorId): boolean {
+    return this.queue.has(actorId);
   }
 }

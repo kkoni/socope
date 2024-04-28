@@ -122,3 +122,40 @@ export class NeighborCrawlFollowsFetchBuffer {
     this.buffer.clear();
   }
 }
+
+export interface FeedFetchResult {
+  actorId: ActorId;
+  fetchedAt: Date;
+  mostRecentlyPostedAt?: Date;
+  isSucceeded: boolean;
+}
+
+function feedFetchResultToSerializableObject(result: FeedFetchResult): any {
+  return {
+    actorId: serializeActorId(result.actorId),
+    fetchedAt: result.fetchedAt.getTime(),
+    isSucceeded: result.isSucceeded,
+  };
+}
+
+function serializableObjectToFeedFetchResult(obj: any): FeedFetchResult|undefined {
+  if (obj && obj.actorId && obj.fetchedAt && obj.isSucceeded) {
+    const actorId = deserializeActorId(obj.actorId);
+    if (actorId) {
+      return {
+        actorId,
+        fetchedAt: new Date(obj.fetchedAt),
+        isSucceeded: obj.isSucceeded,
+      };
+    }
+  }
+  return undefined;
+}
+
+export function serializeFeedFetchResult(result: FeedFetchResult): string {
+  return JSON.stringify(feedFetchResultToSerializableObject(result));
+}
+
+export function deserializeFeedFetchResult(s: string): FeedFetchResult|undefined {
+  return serializableObjectToFeedFetchResult(JSON.parse(s));
+}
