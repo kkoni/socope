@@ -18,6 +18,10 @@ export function equalsAsSet(a: string[], b: string[]): boolean {
   return b.every((x) => aSet.has(x)) && a.every((x) => bSet.has(x));
 }
 
+export interface Serializable {
+  toString(): string;
+}
+
 export class Queue<T> {
   private size: number = 0;
   private head: number = 0;
@@ -156,3 +160,61 @@ export async function linkHandler(url: string) {
     console.error('Cannot open URL: ' + url);
   }
 };
+
+export class SerializableKeyMap<K extends Serializable, V> {
+  private keyMap: Map<string, K> = new Map();
+  private valueMap: Map<string, V> = new Map();
+
+  public set(key: K, value: V) {
+    this.keyMap.set(key.toString(), key);
+    this.valueMap.set(key.toString(), value);
+  }
+
+  public get(key: K): V|undefined {
+    return this.valueMap.get(key.toString());
+  }
+
+  public delete(key: K) {
+    this.keyMap.delete(key.toString());
+    this.valueMap.delete(key.toString());
+  }
+
+  public has(key: K): boolean {
+    return this.valueMap.has(key.toString());
+  }
+
+  public clear() {
+    this.keyMap.clear();
+    this.valueMap.clear();
+  }
+
+  public entries(): IterableIterator<[K, V]> {
+    return new SerializableKeyMapIterator(this.keyMap.values(), this.valueMap);
+  }
+}
+
+class SerializableKeyMapIterator<K extends Serializable, V> implements IterableIterator<[K, V]> {
+  private keyIterator: IterableIterator<K>;
+  private valueMap: Map<string, V>;
+
+  constructor(keyIterator: IterableIterator<K>, valueMap: Map<string, V>) {
+    this.keyIterator = keyIterator;
+    this.valueMap = valueMap;
+  }
+
+  public next(): IteratorResult<[K, V]> {
+    const key = this.keyIterator.next();
+    if (key.done) {
+      return { done: true, value: undefined };
+    }
+    const value = this.valueMap.get(key.value.toString());
+    if (value === undefined) {
+      return { done: true, value: undefined };
+    }
+    return { done: false, value: [key.value, value] };
+  }
+
+  [Symbol.iterator](): IterableIterator<[K, V]> {
+    return this;
+  }
+}

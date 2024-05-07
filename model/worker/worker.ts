@@ -1,4 +1,4 @@
-import { equalsAsSet, getEpochSeconds } from '../lib/util';
+import { SerializableKeyMap, equalsAsSet, getEpochSeconds } from '../lib/util';
 import { ActorId, Group, Neighbor, SNSTypes, parseActorId } from '../data';
 import { getGroupRepository, getFollowsRepository, getNeighborsRepository } from '../repositories';
 import {
@@ -122,7 +122,7 @@ class NeighborCrawlStartWorker {
       groupActorIds: new Set(actorIds.map((aid) => aid.toString())),
       closeNeighborIds: new Set<string>(),
       errorActorIds: new Set<string>(),
-      followCounts: new Map<string, { countByMember: number, countByNeighbor: number }>(),
+      followCounts: new SerializableKeyMap<ActorId, { countByMember: number, countByNeighbor: number }>(),
     };
     for (const actorId of actorIds) {
       await checkFollowsAndEnqueueFetchParamsIfNecessary(actorId, true, dataSet, followsFetchQueue);
@@ -147,19 +147,18 @@ async function checkFollowsAndEnqueueFetchParamsIfNecessary(
 }
 
 function addFollowCounts(
-  followCounts: Map<string, { countByMember: number, countByNeighbor: number }>,
+  followCounts: SerializableKeyMap<ActorId, { countByMember: number, countByNeighbor: number }>,
   isMember: boolean,
   followedIds: ActorId[],
 ) {
   for (const followedId of followedIds) {
-    const followedIdString = followedId.toString();
-    if (!followCounts.has(followedIdString)) {
-      followCounts.set(followedIdString, { countByMember: 0, countByNeighbor: 0 });
+    if (!followCounts.has(followedId)) {
+      followCounts.set(followedId, { countByMember: 0, countByNeighbor: 0 });
     }
     if (isMember) {
-      followCounts.get(followedIdString)!.countByMember++;
+      followCounts.get(followedId)!.countByMember++;
     } else {
-      followCounts.get(followedIdString)!.countByNeighbor++;
+      followCounts.get(followedId)!.countByNeighbor++;
     }
   }
 }
@@ -355,11 +354,11 @@ class NeighborCrawlWorker {
     const followCounts = Array.from(dataSet.followCounts.entries());
     this.sortFollowCounts(followCounts);
     for (const fc of followCounts) {
-      if (!dataSet.groupActorIds.has(fc[0]) && !dataSet.closeNeighborIds.has(fc[0]) && !dataSet.errorActorIds.has(fc[0])) {
-        const actorId = parseActorId(fc[0]);
+      if (!dataSet.groupActorIds.has(fc[0].toString()) && !dataSet.closeNeighborIds.has(fc[0].toString()) && !dataSet.errorActorIds.has(fc[0].toString())) {
+        const actorId = parseActorId(fc[0].toString());
         if (actorId !== undefined) {
-          dataSet.closeNeighborIds.add(fc[0]);
-          await checkFollowsAndEnqueueFetchParamsIfNecessary(actorId, dataSet.groupActorIds.has(fc[0]), dataSet, followsFetchQueue);
+          dataSet.closeNeighborIds.add(fc[0].toString());
+          await checkFollowsAndEnqueueFetchParamsIfNecessary(actorId, dataSet.groupActorIds.has(fc[0].toString()), dataSet, followsFetchQueue);
           return true;
         }
       }
@@ -367,7 +366,7 @@ class NeighborCrawlWorker {
     return false;
   }
 
-  private sortFollowCounts(followCounts:[string, { countByMember: number, countByNeighbor: number }][]) {
+  private sortFollowCounts(followCounts:[ActorId, { countByMember: number, countByNeighbor: number }][]) {
     followCounts.sort((a, b) => {
       if (a[1].countByMember !== b[1].countByMember) {
         return b[1].countByMember - a[1].countByMember;
@@ -416,12 +415,12 @@ class NeighborCrawlWorker {
 
   private selectNeighbors(dataSet: NeighborCrawlDataSet, limit: number): Neighbor[] {
     const neighbors: Neighbor[] = Array.from(dataSet.followCounts.entries()).map((fc) => {
-      const actorId = parseActorId(fc[0]);
-      if (actorId === undefined || dataSet.groupActorIds.has(fc[0]) || fc[1].countByMember + fc[1].countByNeighbor <= NeighborCrawlWorker.neighborFollowCountThreshold) {
+      const actorId: ActorId = fc[0];
+      if (dataSet.groupActorIds.has(actorId.toString()) || fc[1].countByMember + fc[1].countByNeighbor <= NeighborCrawlWorker.neighborFollowCountThreshold) {
         return undefined;
       }
       const score = fc[1].countByMember * 2 + fc[1].countByNeighbor;
-      return { actorId, score };
+      return { actorId,  score };
     }).filter((neighbor) => neighbor !== undefined) as Neighbor[];
     neighbors.sort((a, b) => b.score - a.score);
     return neighbors.slice(0, limit);

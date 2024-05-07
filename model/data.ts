@@ -1,4 +1,5 @@
 import deepEqual from 'deep-equal';
+import { Serializable } from './lib/util';
 
 export const SNSTypes = {
   ActivityPub: "ActivityPub",
@@ -17,7 +18,7 @@ export function parseSNSType(s: string): SNSType|undefined {
   }
 }
 
-export class ActorId {
+export class ActorId implements Serializable {
   snsType: SNSType;
   value: string;
 
@@ -114,7 +115,7 @@ export function deserializeActor(s: string): Actor|undefined {
   return serializableObjectToActor(JSON.parse(s));
 }
 
-export class PostId {
+export class PostId implements Serializable {
   snsType: SNSType;
   value: string;
 
@@ -177,7 +178,7 @@ export interface Repost {
   indexedAt: Date;
 }
 
-export class GroupId {
+export class GroupId implements Serializable {
   value: number;
 
   constructor(value: number) {

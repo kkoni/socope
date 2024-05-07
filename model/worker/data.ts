@@ -1,4 +1,4 @@
-import { Queue } from '../lib/util';
+import { Queue, SerializableKeyMap } from '../lib/util';
 import {
   ActorId,
   GroupId,
@@ -17,7 +17,7 @@ export interface NeighborCrawlDataSet {
   groupActorIds: Set<string>;
   closeNeighborIds: Set<string>;
   errorActorIds: Set<string>;
-  followCounts: Map<string, { countByMember: number, countByNeighbor: number }>;
+  followCounts: SerializableKeyMap<ActorId, { countByMember: number, countByNeighbor: number }>;
 }
 
 export interface NeighborCrawlFollowsFetchParams {
@@ -99,23 +99,23 @@ export class NeighborCrawlFollowsFetchQueue {
 }
 
 export class NeighborCrawlFollowsFetchBuffer {
-  private buffer: Map<string, ActorId[]> = new Map();
+  private buffer: SerializableKeyMap<ActorId, ActorId[]> = new SerializableKeyMap();
 
   add(actorId: ActorId, followedIds: ActorId[]) {
-    let buffered = this.buffer.get(actorId.toString());
+    let buffered = this.buffer.get(actorId);
     if (buffered === undefined) {
-      this.buffer.set(actorId.toString(), [...followedIds]);
+      this.buffer.set(actorId, [...followedIds]);
     } else {
       buffered.push(...followedIds);
     }
   }
 
   get(actorId: ActorId): ActorId[]|undefined {
-    return this.buffer.get(actorId.toString());
+    return this.buffer.get(actorId);
   }
 
   delete(actorId: ActorId): void {
-    this.buffer.delete(actorId.toString());
+    this.buffer.delete(actorId);
   }
 
   clear(): void {

@@ -3,7 +3,7 @@ import { useRecoilState } from 'recoil';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { Avatar, Button, Portal, Snackbar, Text, TextInput } from 'react-native-paper';
 import { useNavigation } from '@react-navigation/native';
-import { linkHandler } from '../model/lib/util';
+import { SerializableKeyMap, linkHandler } from '../model/lib/util';
 import { selectedGroupIdState, allGroupsState, jumpedGroupIdState, currentNeighborCrawlStatusState } from '../states';
 import { updateGroup, deleteGroup } from '../facades';
 import { Actor, ActorId, Group, SNSTypes, Neighbors } from '../model/data';
@@ -18,12 +18,12 @@ export default function GroupDetailScreen() {
   const [ currentNeighborCrawlStatus ] = useRecoilState(currentNeighborCrawlStatusState)
 
   const [ group, setGroup ] = useState<Group|undefined>(undefined);
-  const [ actors, setActors ] = useState<Map<string, Actor>>(new Map());
+  const [ actors, setActors ] = useState<SerializableKeyMap<ActorId, Actor>>(new SerializableKeyMap());
   const [ inEditMode, setInEditMode ] = useState<boolean>(false);
   const [ neighbors, setNeighbors ] = useState<Neighbors|undefined>(undefined);
   const [ neighborCrawlStatus, setNeighborCrawlStatus ] = useState<NeighborCrawlStatus|undefined>(undefined);
   const [ neighborCrawlResult, setNeighborCrawlResult ] = useState<NeighborCrawlResult|undefined>(undefined);
-  const [ closeNeighbors, setCloseNeighbors ] = useState<Map<string, Actor>>(new Map());
+  const [ closeNeighbors, setCloseNeighbors ] = useState<SerializableKeyMap<ActorId, Actor>>(new SerializableKeyMap());
 
   useEffect(() => { reloadGroup() }, [selectedGroupId]);
 
@@ -44,7 +44,7 @@ export default function GroupDetailScreen() {
       const neighbors = await neighborsRepository.get(group.id);
       setNeighbors(neighbors);
       if (neighbors !== undefined) {
-        const closeNeighbors = new Map<string, Actor>();
+        const closeNeighbors = new SerializableKeyMap<ActorId, Actor>();
         const neighborsToShow = [
           ...neighbors.activityPubNeighbors.slice(0, neighborCountToShow),
           ...neighbors.atProtoNeighbors.slice(0, neighborCountToShow),
@@ -52,7 +52,7 @@ export default function GroupDetailScreen() {
         for (const neighbor of neighborsToShow) {
           const actor = await getActorRepository().get(neighbor.actorId);
           if (actor !== undefined) {
-            closeNeighbors.set(actor.id.toString(), actor);
+            closeNeighbors.set(actor.id, actor);
           }
         }
         setCloseNeighbors(closeNeighbors);
@@ -64,16 +64,16 @@ export default function GroupDetailScreen() {
   const reloadGroup = async () => {
     if (selectedGroupId !== undefined) {
       const group = await (await getGroupRepository()).get(selectedGroupId);
-      setActors(new Map());
+      setActors(new SerializableKeyMap());
       setGroup(group);
 
       if (group !== undefined) {
         const actorRepository = getActorRepository();
-        const actors = new Map<string, Actor>();
+        const actors = new SerializableKeyMap<ActorId, Actor>();
         for (const actorId of group.actorIds) {
           const actor = await actorRepository.get(actorId);
           if (actor !== undefined) {
-            actors.set(actor.id.toString(), actor);
+            actors.set(actor.id, actor);
           }
         }
         setActors(actors);
@@ -139,9 +139,9 @@ export default function GroupDetailScreen() {
 
 type GroupDetailViewProps = {
   group: Group;
-  actors: Map<string, Actor>;
+  actors: SerializableKeyMap<ActorId, Actor>;
   neighbors: Neighbors|undefined;
-  closeNeighbors: Map<string, Actor>;
+  closeNeighbors: SerializableKeyMap<ActorId, Actor>;
   neighborCrawlStatus: NeighborCrawlStatus|undefined;
   neighborCrawlResult: NeighborCrawlResult|undefined;
   openEditorHandler: () => void;
@@ -187,16 +187,16 @@ function GroupDetailView(props: GroupDetailViewProps) {
   );
 
   const activityPubActorViews = props.group.actorIds.filter(aid => aid.snsType === SNSTypes.ActivityPub).map(actorId => {
-    return createActorView(actorId, props.actors.get(actorId.toString()));
+    return createActorView(actorId, props.actors.get(actorId));
   });
   const atProtoActorViews = props.group.actorIds.filter(aid => aid.snsType === SNSTypes.ATProto).map(actorId => {
-    return createActorView(actorId, props.actors.get(actorId.toString()));
+    return createActorView(actorId, props.actors.get(actorId));
   });
   const activityPubNeighborViews = props.neighbors === undefined ? [] : props.neighbors.activityPubNeighbors.slice(0, neighborCountToShow).map(neighbor => {
-    return createActorView(neighbor.actorId, props.closeNeighbors.get(neighbor.actorId.toString()));
+    return createActorView(neighbor.actorId, props.closeNeighbors.get(neighbor.actorId));
   });
   const atProtoNeighborViews = props.neighbors === undefined ? [] : props.neighbors.atProtoNeighbors.slice(0, neighborCountToShow).map(neighbor => {
-    return createActorView(neighbor.actorId, props.closeNeighbors.get(neighbor.actorId.toString()));
+    return createActorView(neighbor.actorId, props.closeNeighbors.get(neighbor.actorId));
   });
 
   return (
@@ -270,9 +270,9 @@ const groupDetailStyles = StyleSheet.create({
 
 type GroupEditorViewProps = {
   group: Group;
-  currentActors: Map<string, Actor>;
+  currentActors: SerializableKeyMap<ActorId, Actor>;
   neighbors: Neighbors|undefined;
-  closeNeighbors: Map<string, Actor>;
+  closeNeighbors: SerializableKeyMap<ActorId, Actor>;
   updateGroupHandler: () => void;
   cancelEditHandler: () => void;
 }
@@ -295,7 +295,7 @@ function GroupEditorView(props: GroupEditorViewProps) {
   useEffect(() => {
     setGroupName(props.group.name);
     const initialActorStatuses: GroupEditorActorStatus[] = props.group.actorIds.map(actorId => 
-      ({ actorId: actorId, actor: props.currentActors.get(actorId.toString()), status: 'unchanged'})
+      ({ actorId: actorId, actor: props.currentActors.get(actorId), status: 'unchanged'})
     );
     setActors(initialActorStatuses);
   }, [props.group, props.currentActors]);
@@ -446,10 +446,10 @@ function GroupEditorView(props: GroupEditorViewProps) {
     </View>
   );
   const activityPubNeighborViews = props.neighbors === undefined ? [] : props.neighbors.activityPubNeighbors.slice(0, neighborCountToShow).map(neighbor => {
-    return createNeighborView(neighbor.actorId, props.closeNeighbors.get(neighbor.actorId.toString()));
+    return createNeighborView(neighbor.actorId, props.closeNeighbors.get(neighbor.actorId));
   });
   const atProtoNeighborViews = props.neighbors === undefined ? [] : props.neighbors.atProtoNeighbors.slice(0, neighborCountToShow).map(neighbor => {
-    return createNeighborView(neighbor.actorId, props.closeNeighbors.get(neighbor.actorId.toString()));
+    return createNeighborView(neighbor.actorId, props.closeNeighbors.get(neighbor.actorId));
   });
 
   return (
