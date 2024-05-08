@@ -1,4 +1,4 @@
-import { SerializableKeyMap, equalsAsSet, getEpochSeconds } from '../lib/util';
+import { SerializableKeyMap, SerializableValueSet, equalsAsSet, getEpochSeconds } from '../lib/util';
 import { ActorId, Group, Neighbor, SNSTypes, parseActorId } from '../data';
 import { getGroupRepository, getFollowsRepository, getNeighborsRepository } from '../repositories';
 import {
@@ -119,9 +119,9 @@ class NeighborCrawlStartWorker {
 
   private async createInitialDataSet(actorIds: ActorId[], followsFetchQueue: NeighborCrawlFollowsFetchQueue): Promise<NeighborCrawlDataSet> {
     const dataSet = {
-      groupActorIds: new Set(actorIds.map((aid) => aid.toString())),
-      closeNeighborIds: new Set<string>(),
-      errorActorIds: new Set<string>(),
+      groupActorIds: new SerializableValueSet(actorIds),
+      closeNeighborIds: new SerializableValueSet<ActorId>(),
+      errorActorIds: new SerializableValueSet<ActorId>(),
       followCounts: new SerializableKeyMap<ActorId, { countByMember: number, countByNeighbor: number }>(),
     };
     for (const actorId of actorIds) {
@@ -240,7 +240,7 @@ class NeighborCrawlWorker {
       const followsFetchResult = await this.fetchFollows(followsFetchParams, dataSet);
       if (followsFetchResult.isError) {
         followsFetchBuffer.delete(followsFetchParams.actorId);
-        dataSet.errorActorIds.add(followsFetchParams.actorId.toString());
+        dataSet.errorActorIds.add(followsFetchParams.actorId);
         if (dataSet.errorActorIds.size > (dataSet.groupActorIds.size + dataSet.closeNeighborIds.size) / 2) {
           await this.finalizeCrawlByError(status);
         }
@@ -249,7 +249,7 @@ class NeighborCrawlWorker {
         if (followedIds !== undefined) {
           const followsRepository = await getFollowsRepository();
           await followsRepository.store(followsFetchParams.actorId, followedIds.map((aid) => aid.value));
-          addFollowCounts(dataSet.followCounts, dataSet.groupActorIds.has(followsFetchParams.actorId.toString()), followedIds);
+          addFollowCounts(dataSet.followCounts, dataSet.groupActorIds.has(followsFetchParams.actorId), followedIds);
         }
       } else {
         if (followsFetchResult.nextParams !== undefined) {
@@ -354,13 +354,11 @@ class NeighborCrawlWorker {
     const followCounts = Array.from(dataSet.followCounts.entries());
     this.sortFollowCounts(followCounts);
     for (const fc of followCounts) {
-      if (!dataSet.groupActorIds.has(fc[0].toString()) && !dataSet.closeNeighborIds.has(fc[0].toString()) && !dataSet.errorActorIds.has(fc[0].toString())) {
-        const actorId = parseActorId(fc[0].toString());
-        if (actorId !== undefined) {
-          dataSet.closeNeighborIds.add(fc[0].toString());
-          await checkFollowsAndEnqueueFetchParamsIfNecessary(actorId, dataSet.groupActorIds.has(fc[0].toString()), dataSet, followsFetchQueue);
-          return true;
-        }
+      const actorId = fc[0];
+      if (!dataSet.groupActorIds.has(actorId) && !dataSet.closeNeighborIds.has(actorId) && !dataSet.errorActorIds.has(actorId)) {
+        dataSet.closeNeighborIds.add(actorId);
+        await checkFollowsAndEnqueueFetchParamsIfNecessary(actorId, dataSet.groupActorIds.has(actorId), dataSet, followsFetchQueue);
+        return true;
       }
     }
     return false;
@@ -396,10 +394,10 @@ class NeighborCrawlWorker {
     const resultRepository = await getNeighborCrawlResultRepository();
     const groupActorIds: ActorId[] = [];
     if (activityPubDataSet !== undefined) {
-      groupActorIds.push(...Array.from(activityPubDataSet.groupActorIds).map((aid) => parseActorId(aid)!));
+      groupActorIds.push(...Array.from(activityPubDataSet.groupActorIds.values()));
     }
     if (atProtoDataSet !== undefined) {
-      groupActorIds.push(...Array.from(atProtoDataSet.groupActorIds).map((aid) => parseActorId(aid)!));
+      groupActorIds.push(...Array.from(atProtoDataSet.groupActorIds.values()));
     }
     resultRepository.store({
       groupId: status.groupId,
@@ -416,7 +414,7 @@ class NeighborCrawlWorker {
   private selectNeighbors(dataSet: NeighborCrawlDataSet, limit: number): Neighbor[] {
     const neighbors: Neighbor[] = Array.from(dataSet.followCounts.entries()).map((fc) => {
       const actorId: ActorId = fc[0];
-      if (dataSet.groupActorIds.has(actorId.toString()) || fc[1].countByMember + fc[1].countByNeighbor <= NeighborCrawlWorker.neighborFollowCountThreshold) {
+      if (dataSet.groupActorIds.has(actorId) || fc[1].countByMember + fc[1].countByNeighbor <= NeighborCrawlWorker.neighborFollowCountThreshold) {
         return undefined;
       }
       const score = fc[1].countByMember * 2 + fc[1].countByNeighbor;
@@ -433,10 +431,10 @@ class NeighborCrawlWorker {
     const resultRepository = await getNeighborCrawlResultRepository();
     const groupActorIds: ActorId[] = [];
     if (activityPubDataSet !== undefined) {
-      groupActorIds.push(...Array.from(activityPubDataSet.groupActorIds).map((aid) => parseActorId(aid)!));
+      groupActorIds.push(...Array.from(activityPubDataSet.groupActorIds.values()));
     }
     if (atProtoDataSet !== undefined) {
-      groupActorIds.push(...Array.from(atProtoDataSet.groupActorIds).map((aid) => parseActorId(aid)!));
+      groupActorIds.push(...Array.from(atProtoDataSet.groupActorIds.values()));
     }
     resultRepository.store({
       groupId: status.groupId,

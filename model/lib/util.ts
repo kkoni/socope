@@ -218,3 +218,39 @@ class SerializableKeyMapIterator<K extends Serializable, V> implements IterableI
     return this;
   }
 }
+
+export class SerializableValueSet<T extends Serializable> {
+  private valueMap: Map<string, T> = new Map();
+
+  constructor(values?: T[]) {
+    if (values !== undefined) {
+      for (const value of values) {
+        this.add(value);
+      }
+    }
+  }
+
+  add(value: T) {
+    this.valueMap.set(value.toString(), value);
+  }
+
+  delete(value: T) {
+    this.valueMap.delete(value.toString());
+  }
+
+  has(value: T) {
+    return this.valueMap.has(value.toString());
+  }
+
+  values(): IterableIterator<T> {
+    return this.valueMap.values();
+  }
+
+  clear() {
+    this.valueMap.clear();
+  }
+
+  get size(): number {
+    return this.valueMap.size;
+  }
+}

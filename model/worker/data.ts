@@ -1,4 +1,4 @@
-import { Queue, SerializableKeyMap } from '../lib/util';
+import { Queue, SerializableKeyMap, SerializableValueSet } from '../lib/util';
 import {
   ActorId,
   GroupId,
@@ -14,9 +14,9 @@ export interface NeighborCrawlStatus {
 }
 
 export interface NeighborCrawlDataSet {
-  groupActorIds: Set<string>;
-  closeNeighborIds: Set<string>;
-  errorActorIds: Set<string>;
+  groupActorIds: SerializableValueSet<ActorId>;
+  closeNeighborIds: SerializableValueSet<ActorId>;
+  errorActorIds: SerializableValueSet<ActorId>;
   followCounts: SerializableKeyMap<ActorId, { countByMember: number, countByNeighbor: number }>;
 }
 

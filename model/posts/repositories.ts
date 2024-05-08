@@ -1,6 +1,7 @@
 import { DateHour } from '../lib/date';
 import { EphemeralDataStorage, StorageManager, getStorageManager } from '../lib/storage';
-import { GroupId } from '../data';
+import { SerializableValueSet } from '../lib/util';
+import { GroupId, PostId } from '../data';
 import { PostIndex, serializePostIndices, deserializePostIndices } from './data';
 
 interface Singletons {
@@ -88,7 +89,7 @@ class PostIndicesBuffer {
   groupId: GroupId;
   dateHour: DateHour;
   indices: PostIndex[];
-  postIds: Set<string>;
+  postIds: SerializableValueSet<PostId>;
   changedAt: Date;
   changed: boolean;
 
@@ -96,7 +97,7 @@ class PostIndicesBuffer {
     this.groupId = groupId;
     this.dateHour = dateHour;
     this.indices = [];
-    this.postIds = new Set();
+    this.postIds = new SerializableValueSet();
     for (const index of indices) {
       this.add(index);
     }
@@ -105,11 +106,11 @@ class PostIndicesBuffer {
   }
 
   private pushToIndices(index: PostIndex): boolean {
-    if (this.postIds.has(index.postId.toString())) {
+    if (this.postIds.has(index.postId)) {
       return false;
     } else {
       this.indices.push(index);
-      this.postIds.add(index.postId.toString());
+      this.postIds.add(index.postId);
       return true;
     }
   }
