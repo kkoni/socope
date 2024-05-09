@@ -253,6 +253,7 @@ export function deserializeGroup(s: string): Group|undefined {
 }
 
 export interface Neighbors {
+  groupId: GroupId;
   activityPubNeighbors: Neighbor[];
   atProtoNeighbors: Neighbor[];
 }
@@ -264,6 +265,7 @@ export interface Neighbor {
 
 function neighborsToSerializableObject(neighbors: Neighbors): any {
   return {
+    groupId: groupIdToSerializableObject(neighbors.groupId),
     activityPubNeighbors: neighbors.activityPubNeighbors.map(neighborToSerializableObject),
     atProtoNeighbors: neighbors.atProtoNeighbors.map(neighborToSerializableObject),
   };
@@ -277,12 +279,17 @@ function neighborToSerializableObject(neighbor: Neighbor): any {
 }
 
 function serializableObjectToNeighbors(obj: any): Neighbors|undefined {
-  if (obj) {
+  if (obj && obj.groupId) {
+    const groupId = serializableObjectToGroupId(obj.groupId);
+    if (!groupId) {
+      return undefined;
+    }
     const activityPubNeighbors = obj.activityPubNeighbors ?
       obj.activityPubNeighbors.map(serializableObjectToNeighbor).filter((neighbor: any) => neighbor !== undefined) as Neighbor[] : [];
     const atProtoNeighbors = obj.atProtoNeighbors ?
       obj.atProtoNeighbors.map(serializableObjectToNeighbor).filter((neighbor: any) => neighbor !== undefined) as Neighbor[] : [];
     return {
+      groupId,
       activityPubNeighbors,
       atProtoNeighbors,
     };

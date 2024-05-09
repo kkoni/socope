@@ -389,7 +389,7 @@ class NeighborCrawlWorker {
     const atProtoNeighbors = atProtoDataSet === undefined ? [] : this.selectNeighbors(atProtoDataSet, atProtoNeighborsLimit);
 
     const neighborsRepository = await getNeighborsRepository();
-    neighborsRepository.store(status.groupId, { activityPubNeighbors, atProtoNeighbors });
+    neighborsRepository.store(status.groupId, { groupId: status.groupId, activityPubNeighbors, atProtoNeighbors });
 
     const resultRepository = await getNeighborCrawlResultRepository();
     const groupActorIds: ActorId[] = [];
