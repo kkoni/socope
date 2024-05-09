@@ -4,7 +4,6 @@ export interface PostIndex {
   postId: PostId;
   postedAt: Date;
   postedBy: ActorId;
-  repostedPostId?: PostId;
 }
 
 export function serializePostIndices(indices: PostIndex[]): string {
@@ -21,7 +20,6 @@ function postIndexToSerializableObject(index: PostIndex): any {
     pid: index.postId.value,
     pat: index.postedAt.getTime(),
     pby: index.postedBy.value,
-    rpid: index.repostedPostId?.value,
   }
 }
 
@@ -33,7 +31,6 @@ function serializableObjectToPostIndex(obj: any): PostIndex|undefined {
         postId: new PostId(snsType, obj.pid),
         postedAt: new Date(obj.pat),
         postedBy: new ActorId(snsType, obj.pby),
-        repostedPostId: obj.rpid ? new PostId(snsType, obj.rpid) : undefined,
       };
     }
   }

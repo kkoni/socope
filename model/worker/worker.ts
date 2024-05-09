@@ -1,6 +1,8 @@
+import { AppBskyFeedDefs } from '@atproto/api';
 import { SerializableKeyMap, SerializableValueSet, equalsAsSet, getEpochSeconds } from '../lib/util';
-import { ActorId, Group, Neighbor, SNSTypes, parseActorId } from '../data';
-import { getGroupRepository, getFollowsRepository, getNeighborsRepository } from '../repositories';
+import { ActorId, Group, Neighbor, PostId, SNSTypes } from '../data';
+import { getActorRepository, getGroupRepository, getFollowsRepository, getNeighborsRepository } from '../repositories';
+import { PostIndex } from '../posts/data';
 import {
   getActorRepository as getActivityPubActorRepository,
   getFollowingClient as getActivityPubFollowingClient,
@@ -14,6 +16,7 @@ import {
   NeighborCrawlFollowsFetchParams,
   NeighborCrawlFollowsFetchQueue,
   NeighborCrawlDataSet,
+  FeedFetchResult,
 } from './data';
 import {
   getNeighborCrawlResultRepository,
@@ -21,6 +24,7 @@ import {
   getFeedFetchQueue,
   getFeedFetchResultRepository,
 } from './repositories';
+import { getPostIndexRepository } from '../posts/repositories';
 
 let neighborCrawlStartWorker: NeighborCrawlStartWorker|undefined;
 let neighborCrawlWorker: NeighborCrawlWorker|undefined;
@@ -453,12 +457,11 @@ const successFeedFetchIntervalMillis = 10 * 60 * 1000;
 const errorFeedFetchIntervalMillis = 60 * 60 * 1000;
 
 class FeedFetchEnqueueWorker {
-  private static intervalMillis = 600000;
+  private static intervalMillis = 10000;
 
   private clearInterval: any|undefined;
 
   start() {
-    this.execute();
     this.clearInterval = setInterval(() => { this.execute(); }, FeedFetchEnqueueWorker.intervalMillis);
   }
 
@@ -473,10 +476,12 @@ class FeedFetchEnqueueWorker {
       const groupRepository = await getGroupRepository();
       const feedFetchQueue = getFeedFetchQueue();
       const feedFetchResultRepository = await getFeedFetchResultRepository();
-      for (const group of (await groupRepository.getAll())) {
+      const groups = await groupRepository.getAll();
+      for (const group of groups) {
         for (const actorId of group.actorIds) {
           if (!feedFetchQueue.has(actorId)) {
             const previousResult = await feedFetchResultRepository.get(actorId);
+            console.log(previousResult);
             if (previousResult === undefined) {
               feedFetchQueue.enqueue(actorId, new Date());
             } else if (previousResult.isSucceeded) {
@@ -495,6 +500,8 @@ class FeedFetchEnqueueWorker {
 
 class FeedFetchWorker {
   private static intervalMillis = 10000;
+  private static limitPerFetch = 10;
+  private static limitPerActor = 100;
 
   private clearInterval: any|undefined;
   
@@ -531,18 +538,96 @@ class FeedFetchWorker {
   private async fetchFeed(actorId: ActorId): Promise<void> {
     const feedFetchResultRepository = await getFeedFetchResultRepository();
     const feedFetchQueue = getFeedFetchQueue();
+    const previousResult = await feedFetchResultRepository.get(actorId);
+
+    let fetchResult: {isSucceeded: boolean, mostRecentlyPostedAt?: Date};
     if (actorId.snsType === SNSTypes.ATProto) {
-      const previousResult = await feedFetchResultRepository.get(actorId);
-      const client = getATProtoFeedClient();
-      try {
-        const feed = await client.fetchAuthorFeed(actorId.value, 1);
-        await feedFetchResultRepository.store({ actorId, fetchedAt: new Date(), mostRecentlyPostedAt: previousResult?.mostRecentlyPostedAt, isSucceeded: true});
-        feedFetchQueue.enqueue(actorId, new Date(Date.now() + successFeedFetchIntervalMillis));
-      } catch(e) {
-        console.error('FeedFetchWorker error', e);
-        await feedFetchResultRepository.store({ actorId, fetchedAt: new Date(), mostRecentlyPostedAt: previousResult?.mostRecentlyPostedAt, isSucceeded: false})
-        feedFetchQueue.enqueue(actorId, new Date(Date.now() + errorFeedFetchIntervalMillis));
+      fetchResult = await this.fetchATProtoFeed(actorId, previousResult);
+    } else {
+      fetchResult = {isSucceeded: true};
+    }
+    feedFetchResultRepository.store(
+      {
+        actorId,
+        fetchedAt: new Date(),
+        isSucceeded: fetchResult.isSucceeded,
+        mostRecentlyPostedAt: fetchResult.mostRecentlyPostedAt ?? previousResult?.mostRecentlyPostedAt,
       }
+    );
+    if (fetchResult.isSucceeded) {
+      feedFetchQueue.enqueue(actorId, new Date(Date.now() + successFeedFetchIntervalMillis));
+    } else {
+      feedFetchQueue.enqueue(actorId, new Date(Date.now() + errorFeedFetchIntervalMillis));
+    }
+  }
+
+  private async fetchATProtoFeed(actorId: ActorId, previousResult?: FeedFetchResult): Promise<{isSucceeded: boolean, mostRecentlyPostedAt?:Date}> {
+    const actor = await getActorRepository().get(actorId);
+    const client = getATProtoFeedClient();
+
+    function getPostedAt(post: AppBskyFeedDefs.FeedViewPost): Date|undefined {
+      let parsed: number;
+      if (post.reason === undefined) {
+        parsed = Date.parse(post.post.indexedAt);
+      } else {
+        parsed = Date.parse(post.reason.indexedAt as string);
+      }
+      if (isNaN(parsed)) {
+        return undefined;
+      }
+      return new Date(parsed);
+    }
+
+    async function fetchPosts(limit: number, cursor?: string): Promise<{posts: AppBskyFeedDefs.FeedViewPost[], cursor?: string}> {
+      const response = await client.fetchAuthorFeed(actorId.value, limit, cursor);
+      const newPosts = response.posts.filter((post) => {
+        const postedAt = getPostedAt(post);
+        return postedAt !== undefined && (previousResult?.mostRecentlyPostedAt === undefined || previousResult.mostRecentlyPostedAt.getTime() < postedAt.getTime());
+      });
+      return { posts: newPosts, cursor: newPosts.length === limit ? response.cursor : undefined };
+    }
+
+    async function storePostIndices(posts: AppBskyFeedDefs.FeedViewPost[]) {
+      const groupIds = [
+        ...(await (await getGroupRepository()).getGroupIdsByActor(actorId)),
+        ...(await (await getNeighborsRepository()).getGroupIdsByActor(actorId)),
+      ];
+      const postIndexRepository = await getPostIndexRepository();
+      
+      for (const post of posts) {
+        if (post.reason !== undefined) continue;
+        const postedAt = Date.parse(post.post.indexedAt);
+        if (postedAt === undefined) continue;
+        const postIndex: PostIndex = {
+          postId: new PostId(SNSTypes.ATProto, post.post.cid),
+          postedAt: new Date(postedAt),
+          postedBy: actorId,
+        }
+        for (const groupId of groupIds) {
+          await postIndexRepository.add(groupId, postIndex);
+        }
+      }
+    }
+
+    try {
+      const firstFetchResult = await fetchPosts(1);
+      if (firstFetchResult.posts.length === 0) {
+        return {isSucceeded: true};
+      }
+      const posts = [...firstFetchResult.posts];
+      let cursor: string|undefined = firstFetchResult.cursor;
+      while(cursor !== undefined && posts.length < FeedFetchWorker.limitPerActor) {
+        const fetchResult = await fetchPosts(FeedFetchWorker.limitPerFetch, cursor);
+        posts.push(...fetchResult.posts);
+        cursor = fetchResult.cursor;
+      }
+      await storePostIndices(posts);
+      const mostRecentlyPostedAt = (posts.map(getPostedAt).filter((x) => x !== undefined) as Date[])
+        .reduce((a, b) => a.getTime() > b.getTime() ? a : b);
+      return {isSucceeded: true, mostRecentlyPostedAt };
+    } catch(e) {
+      console.error('FeedFetchWorker error', e);
+      return {isSucceeded: false};
     }
   }
 }

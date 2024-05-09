@@ -199,6 +199,10 @@ export class GroupRepository {
     return this.nextId || new GroupId(1);
   }
 
+  async getGroupIdsByActor(actorId: ActorId): Promise<GroupId[]> {
+    return this.actorGroupMap.get(actorId) || [];
+  }
+
   private addActorToGroup(actorId: ActorId, groupId: GroupId) {
     const groupIds = this.actorGroupMap.get(actorId);
     if (groupIds === undefined) {
@@ -322,6 +326,10 @@ export class NeighborsRepository {
 
   async get(groupId: GroupId): Promise<Neighbors|undefined> {
     return await this.storage.get(groupId.toString());
+  }
+
+  async getGroupIdsByActor(actorId: ActorId): Promise<GroupId[]> {
+    return this.actorGroupMap.get(actorId) || [];
   }
 
   async delete(groupId: GroupId): Promise<void> {

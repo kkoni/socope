@@ -126,8 +126,8 @@ export class NeighborCrawlFollowsFetchBuffer {
 export interface FeedFetchResult {
   actorId: ActorId;
   fetchedAt: Date;
-  mostRecentlyPostedAt?: Date;
   isSucceeded: boolean;
+  mostRecentlyPostedAt?: Date;
 }
 
 function feedFetchResultToSerializableObject(result: FeedFetchResult): any {
@@ -135,6 +135,7 @@ function feedFetchResultToSerializableObject(result: FeedFetchResult): any {
     actorId: serializeActorId(result.actorId),
     fetchedAt: result.fetchedAt.getTime(),
     isSucceeded: result.isSucceeded,
+    mostRecentlyPostedAt: result.mostRecentlyPostedAt?.getTime(),
   };
 }
 
@@ -146,6 +147,7 @@ function serializableObjectToFeedFetchResult(obj: any): FeedFetchResult|undefine
         actorId,
         fetchedAt: new Date(obj.fetchedAt),
         isSucceeded: obj.isSucceeded,
+        mostRecentlyPostedAt: obj.mostRecentlyPostedAt ? new Date(obj.mostRecentlyPostedAt) : undefined,
       };
     }
   }

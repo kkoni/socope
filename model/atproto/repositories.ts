@@ -114,13 +114,13 @@ export class FollowsClient {
 }
 
 export class FeedClient {
-  async fetchAuthorFeed(actorId: string, limit: number, cursor?: string): Promise<AppBskyFeedDefs.FeedViewPost[]> {
+  async fetchAuthorFeed(actorId: string, limit: number, cursor?: string): Promise<{posts: AppBskyFeedDefs.FeedViewPost[], cursor?: string}> {
     const agent = getBskyAgent();
     const response = await agent.getAuthorFeed({actor: actorId, limit, cursor});
     if (response.success) {
-      return response.data.feed;
+      return {posts: response.data.feed, cursor: response.data.cursor};
     } else {
-      throw new Error('BlueSky getTimeline error: unknown');
+      throw new Error('BlueSky getAuthorFeed error: unknown');
     }
   }
 }
