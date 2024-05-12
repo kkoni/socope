@@ -33,6 +33,8 @@ export interface StorageManager {
    */
   deleteExpiredEphemeralData(now: number): Promise<void>;
 
+  deleteEphemeralDataByPrefix(prefix: string): Promise<void>;
+
   /**
    * 
    * @param key 
@@ -184,6 +186,22 @@ class StorageManagerImpl implements StorageManager {
       [{
         sql: `DELETE FROM ${ephemeralDataTableName} WHERE expired_at < ?`,
         args: [now],
+      }],
+      false
+    ))[0];
+    if (isResultSetError(result)) {
+      console.log(result.error);
+    } else if (isResultSet(result)) {
+      this.ephemeralDataCount = await this.getEphemeralDataCount();
+    }
+  }
+
+  public async deleteEphemeralDataByPrefix(prefix: string): Promise<void> {
+    if (this.db === undefined) return;
+    const result = (await this.db.execAsync(
+      [{
+        sql: `DELETE FROM ${ephemeralDataTableName} WHERE key LIKE ?`,
+        args: [`${prefix}%`],
       }],
       false
     ))[0];

@@ -22,10 +22,12 @@ class PostIndexRepository {
   private static storageKeyPrefix = 'posts.PostIndexRepository.storage';
   private static storageTTL = 60 * 60 * 24 * 7; // 1 week
 
+  private storageManager: StorageManager;
   private storage: EphemeralDataStorage<PostIndex[]>;
   private buffers: Map<string, PostIndicesBuffer> = new Map();
 
   constructor(storageManager: StorageManager) {
+    this.storageManager = storageManager;
     this.storage = new EphemeralDataStorage(
       PostIndexRepository.storageKeyPrefix,
       PostIndexRepository.storageTTL,
@@ -80,6 +82,10 @@ class PostIndexRepository {
     } else if (buffer.isExpired()) {
       this.buffers.delete(key);
     }
+  }
+
+  async deleteAll() {
+    await this.storageManager.deleteEphemeralDataByPrefix(PostIndexRepository.storageKeyPrefix)
   }
 }
 

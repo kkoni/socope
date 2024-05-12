@@ -599,7 +599,7 @@ class FeedFetchWorker {
         const postedAt = Date.parse(post.post.indexedAt);
         if (postedAt === undefined) continue;
         const postIndex: PostIndex = {
-          postId: new PostId(SNSTypes.ATProto, post.post.cid),
+          postId: new PostId(SNSTypes.ATProto, post.post.uri),
           postedAt: new Date(postedAt),
           postedBy: actorId,
         }

@@ -162,9 +162,11 @@ export class FeedFetchResultRepository {
   private static storageKeyPrefix = 'FeedFetchResultRepository.storage';
   private static storageTTL = 7 * 24 * 60 * 60 * 1000; // 7 days
 
+  private storageManager: StorageManager;
   private storage: EphemeralDataStorage<FeedFetchResult>;
 
   constructor(storageManager: StorageManager) {
+    this.storageManager = storageManager;
     this.storage = new EphemeralDataStorage(
       FeedFetchResultRepository.storageKeyPrefix,
       FeedFetchResultRepository.storageTTL,
@@ -180,6 +182,10 @@ export class FeedFetchResultRepository {
 
   async get(actorId: ActorId): Promise<FeedFetchResult|undefined> {
     return (await this.storage.get(actorId.toString()))?.value;
+  }
+
+  async deleteAll(): Promise<void> {
+    await this.storageManager.deleteEphemeralDataByPrefix(FeedFetchResultRepository.storageKeyPrefix);
   }
 }
 
