@@ -4,6 +4,7 @@ import { Text } from 'react-native-paper';
 import { useFocusEffect } from '@react-navigation/native';
 import { selectedGroupIdState } from '../states';
 import { Group } from '../model/data';
+import GroupTimeline from './GroupTimeline';
 
 type Props = {
   group: Group;
@@ -19,6 +20,6 @@ export default function GroupScreen(props: Props) {
   });
 
   return (
-    <Text>{props.group.name}</Text>
+    <GroupTimeline groupId={props.group.id}/>
   );
 }

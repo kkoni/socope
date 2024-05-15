@@ -30,6 +30,7 @@ let neighborCrawlStartWorker: NeighborCrawlStartWorker|undefined;
 let neighborCrawlWorker: NeighborCrawlWorker|undefined;
 let feedFetchEnqueueWorker: FeedFetchEnqueueWorker|undefined;
 let feedFetchWorker: FeedFetchWorker|undefined;
+let postIndexFlushWorker: PostIndexFlushWorker|undefined;
 
 export function startWorkers(setCurrentNeighborCrawlStatus: (status: NeighborCrawlStatus|undefined) => void) {
   if (neighborCrawlStartWorker === undefined) {
@@ -48,6 +49,10 @@ export function startWorkers(setCurrentNeighborCrawlStatus: (status: NeighborCra
     feedFetchWorker = new FeedFetchWorker();
     feedFetchWorker.start();
   }
+  if (postIndexFlushWorker === undefined) {
+    postIndexFlushWorker = new PostIndexFlushWorker();
+    postIndexFlushWorker.start();
+  }
 }
 
 export function stopWorkers() {
@@ -55,6 +60,7 @@ export function stopWorkers() {
   neighborCrawlWorker?.stop();
   feedFetchEnqueueWorker?.stop();
   feedFetchWorker?.stop();
+  postIndexFlushWorker?.stop();
 }
 
 class NeighborCrawlStartWorker {
@@ -481,7 +487,6 @@ class FeedFetchEnqueueWorker {
         for (const actorId of group.actorIds) {
           if (!feedFetchQueue.has(actorId)) {
             const previousResult = await feedFetchResultRepository.get(actorId);
-            console.log(previousResult);
             if (previousResult === undefined) {
               feedFetchQueue.enqueue(actorId, new Date());
             } else if (previousResult.isSucceeded) {
@@ -588,6 +593,7 @@ class FeedFetchWorker {
     }
 
     async function storePostIndices(posts: AppBskyFeedDefs.FeedViewPost[]) {
+      console.log('actor ' + actor?.handle + ': feched posts=' + posts.length);
       const groupIds = [
         ...(await (await getGroupRepository()).getGroupIdsByActor(actorId)),
         ...(await (await getNeighborsRepository()).getGroupIdsByActor(actorId)),
@@ -603,6 +609,7 @@ class FeedFetchWorker {
           postedAt: new Date(postedAt),
           postedBy: actorId,
         }
+        console.log('store postIndex of post=' + post.post.indexedAt);
         for (const groupId of groupIds) {
           await postIndexRepository.add(groupId, postIndex);
         }
@@ -628,6 +635,31 @@ class FeedFetchWorker {
     } catch(e) {
       console.error('FeedFetchWorker error', e);
       return {isSucceeded: false};
+    }
+  }
+}
+
+class PostIndexFlushWorker {
+  private static intervalMillis = 60000;
+
+  private clearInterval: any|undefined;
+  
+  start(){
+    this.clearInterval = setInterval(() => { this.execute(); }, PostIndexFlushWorker.intervalMillis);
+  }
+
+  stop() {
+    if (this.clearInterval !== undefined) {
+      clearInterval(this.clearInterval);
+    }
+  }
+
+  private async execute(): Promise<void> {
+    try {
+      const postIndexRepository = await getPostIndexRepository();
+      await postIndexRepository.flushAll();
+    } catch(e) {
+      console.error('PostIndexFlushWorker error', e);
     }
   }
 }
