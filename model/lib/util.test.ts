@@ -1,6 +1,5 @@
 import { describe, expect, it } from '@jest/globals';
-import { PriorityQueue } from './util';
-import { value } from 'jsonpath';
+import { PriorityQueue, SerializableValueSet } from './util';
 
 describe('PriorityQueue', () => {
   it('should pop the smallest element', () => {
@@ -32,5 +31,18 @@ describe('PriorityQueue', () => {
     expect(queue.dequeue()).toEqual({ value: 'a', priority: 5 });
 
     expect(queue.isEmpty()).toEqual(true);
+  });
+});
+
+describe('SerializableValueSet', () => {
+  it('should add and delete values', () => {
+    const set = new SerializableValueSet<string>();
+    expect(set.has('a')).toEqual(false);
+    set.add('a');
+    expect(set.has('a')).toEqual(true);
+    set.add('a');
+    expect(set.has('a')).toEqual(true);
+    set.delete('a');
+    expect(set.has('a')).toEqual(false);
   });
 });

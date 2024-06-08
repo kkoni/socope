@@ -1,12 +1,16 @@
 import { BskyAgent, AppBskyActorDefs, AppBskyFeedDefs, stringifyLex, jsonToLex } from '@atproto/api';
 import { Cache, CachedStorage, EphemeralDataStorage, StorageManager, getStorageManager } from '../lib/storage';
-import { serializeProfile, deserializeProfile } from './data';
+import { ActorId, PostId, Post, Repost, SNSTypes, serializePost, deserializePost } from '../data';
+import { SerializableKeyMap } from '../lib/util';
+import { serializeProfile, deserializeProfile, createPostFromPostView, createPostOrRepostFromFeedViewPost } from './data';
 
 interface Singletons {
   bskyAgent?: BskyAgent;
   actorRepository?: ActorRepository;
   followsClient?: FollowsClient;
   feedClient?: FeedClient;
+  postRepository?: PostRepository;
+  feedRepository?: FeedRepository;
 }
 
 const singletons = {} as Singletons;
@@ -39,6 +43,20 @@ export function getFeedClient(): FeedClient {
     singletons.feedClient = new FeedClient();
   }
   return singletons.feedClient;
+}
+
+export function getPostRepository(): PostRepository {
+  if (!singletons.postRepository) {
+    singletons.postRepository = new PostRepository();
+  }
+  return singletons.postRepository;
+}
+
+export function getFeedRepository(): FeedRepository {
+  if (!singletons.feedRepository) {
+    singletons.feedRepository = new FeedRepository(getPostRepository());
+  }
+  return singletons.feedRepository;
 }
 
 export class ActorRepository {
@@ -122,6 +140,89 @@ export class FeedClient {
     } else {
       throw new Error('BlueSky getAuthorFeed error: unknown');
     }
+  }
+}
+
+export class PostClient {
+  async fetchPosts(uris: string[]): Promise<AppBskyFeedDefs.PostView[]> {
+    const agent = getBskyAgent();
+    const response = await agent.getPosts({uris});
+    if (response.success) {
+      return response.data.posts;
+    } else {
+      throw new Error('BlueSky getPosts error: unknown');
+    }
+  }
+}
+
+export class PostRepository {
+  private static cacheTTL = 60 * 60 * 24;
+  private static cacheMaxKeys = 100000;
+  private static fetchPostLimit = 25;
+
+  private cache = new Cache<Post>(
+    PostRepository.cacheTTL,
+    PostRepository.cacheMaxKeys,
+    serializePost,
+    deserializePost,
+  );
+
+  private client = new PostClient();
+
+  async get(postIds: PostId[]): Promise<SerializableKeyMap<PostId, Post>> {
+    const atProtoPostIds = postIds.filter((postId) => postId.snsType === SNSTypes.ATProto);
+    const result = new SerializableKeyMap<PostId, Post>();
+    const postIdsToFetch: PostId[] = [];
+    for (const postId of atProtoPostIds) {
+      const cached = await this.cache.get(postId.value)
+      if (cached !== undefined) {
+        if (cached.value !== undefined) {
+          result.set(postId, cached.value);
+        }
+      } else {
+        postIdsToFetch.push(postId);
+      }
+    }
+    for (let i=0; i<postIdsToFetch.length; i+=PostRepository.fetchPostLimit) {
+      const fetchedPostViews = await this.client.fetchPosts(postIdsToFetch.slice(i, i+PostRepository.fetchPostLimit).map((postId) => postId.value));
+      for (const postView of fetchedPostViews) {
+        const post = createPostFromPostView(postView);
+        if (post !== undefined) {
+          await this.cache.store(post.id.value, post);
+          result.set(post.id, post);
+        }
+      }
+    }
+    return result;
+  }
+
+  async storeToCache(post: Post): Promise<void> {
+    await this.cache.store(post.id.value, post);
+  }
+}
+
+export class FeedRepository {
+  private client = new FeedClient();
+  private postRepository: PostRepository;
+
+  constructor(postRepository: PostRepository) {
+    this.postRepository = postRepository;
+  }
+
+  async fetchAuthorFeed(actorId: ActorId, limit: number, cursor?: string): Promise<{posts: Post[], reposts: Repost[], cursor?: string}> {
+    const fetchedFeed = await this.client.fetchAuthorFeed(actorId.value, limit, cursor);
+    const posts: Post[] = [];
+    const reposts: Repost[] = [];
+    for (const feedViewPost of fetchedFeed.posts) {
+      const postOrRepost = createPostOrRepostFromFeedViewPost(feedViewPost);
+      if (postOrRepost.post !== undefined) {
+        posts.push(postOrRepost.post);
+        this.postRepository.storeToCache(postOrRepost.post);
+      } else if (postOrRepost.repost !== undefined) {
+        reposts.push(postOrRepost.repost);
+      }
+    }
+    return {posts, reposts, cursor: fetchedFeed.cursor};
   }
 }
 

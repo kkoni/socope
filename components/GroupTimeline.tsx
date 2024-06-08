@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
-import { ScrollView, View } from 'react-native';
-import { Text } from 'react-native-paper';
+import { ScrollView } from 'react-native';
 import { DateHour } from '../model/lib/date';
-import { SerializableValueSet } from '../model/lib/util';
-import { GroupId, PostId } from '../model/data';
+import { SerializableValueSet, SerializableKeyMap } from '../model/lib/util';
+import { GroupId, PostId, Post } from '../model/data';
+import { getPostRepository } from '../model/repositories';
 import { PostIndex } from '../model/posts/data';
 import { getPostIndexRepository } from '../model/posts/repositories';
+import PostView from './PostView';
 
 const INITIAL_LIMIT_OF_POSTS = 100;
 const INITIAL_LIMIT_OF_DAYS = 30;
@@ -19,6 +20,8 @@ export default function GroupTimeline(props: Props) {
   const [ mostRecentDateHour, setMostRecentDateHour ] = useState<DateHour | undefined>(undefined);
   const [ postIdsInMostRecentDateHour, setPostIdsInMostRecentDateHour ] = useState<SerializableValueSet<PostId>>(new SerializableValueSet<PostId>());
   const [ postIndices, setPostIndices ] = useState<PostIndex[]>([]);
+  const [ loadedPosts, setLoadedPosts ] = useState<SerializableKeyMap<PostId, Post>>(new SerializableKeyMap<PostId, Post>());
+  const [ loadedPostIds, setLoadedPostIds ] = useState<SerializableValueSet<PostId>>(new SerializableValueSet<PostId>());
 
   async function loadPostIndices() {
     const postIndexRepository = await getPostIndexRepository();
@@ -36,17 +39,32 @@ export default function GroupTimeline(props: Props) {
     setMostRecentDateHour(firstDateHour);
     setPostIndices(initialPostIndices);
     setLastUpdatedAt(new Date());
+    loadPosts(initialPostIndices.map(postIndex => postIndex.postId));
+  }
+
+  async function loadPosts(postIds: PostId[]) {
+    for (const postId of postIds) {
+      loadedPostIds.add(postId);
+    }
+    for (const [postId, post] of (await getPostRepository().get(postIds)).entries()) {
+      loadedPosts.set(postId, post);
+    }
+    setLoadedPostIds(loadedPostIds.clone());
+    setLoadedPosts(loadedPosts.clone());
   }
 
   useEffect(() => {(async () => {
     await loadPostIndices();
   })()}, [ props.groupId ]);
 
-  const postViews = postIndices.map(postIndex => { return (
-    <View key={postIndex.postId.toString()}>
-      <Text>{postIndex.postId.toString()}</Text><Text>{postIndex.postedAt.toString()}</Text>
-    </View>
-  )});
+  const postViews = postIndices.map(postIndex => {
+    if (loadedPostIds.has(postIndex.postId) && !loadedPosts.has(postIndex.postId)) {
+      return undefined;
+    }
+    return (
+      <PostView key={postIndex.postId.toString()} postIndex={postIndex} post={loadedPosts.get(postIndex.postId)}/>
+    );
+  }).filter(postView => postView !== undefined);
 
   return (
     <ScrollView>

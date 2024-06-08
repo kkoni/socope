@@ -51,7 +51,6 @@ export class Queue<T> {
       const value = this.queue[this.head];
       this.head = (this.head + 1) % this.limit;
       this.size--;
-      console.log('dequeue head=' + this.head + ' size=' + this.size);
       return value;
     }
   }
@@ -162,8 +161,13 @@ export async function linkHandler(url: string) {
 };
 
 export class SerializableKeyMap<K extends Serializable, V> {
-  private keyMap: Map<string, K> = new Map();
-  private valueMap: Map<string, V> = new Map();
+  private keyMap: Map<string, K>;
+  private valueMap: Map<string, V>;
+
+  constructor(keyMap?: Map<string, K>, valueMap?: Map<string, V>) {
+    this.keyMap = keyMap || new Map();
+    this.valueMap = valueMap || new Map();
+  }
 
   public set(key: K, value: V) {
     this.keyMap.set(key.toString(), key);
@@ -190,6 +194,10 @@ export class SerializableKeyMap<K extends Serializable, V> {
 
   public entries(): IterableIterator<[K, V]> {
     return new SerializableKeyMapIterator(this.keyMap.values(), this.valueMap);
+  }
+
+  public clone(): SerializableKeyMap<K, V> {
+    return new SerializableKeyMap(new Map(this.keyMap), new Map(this.valueMap));
   }
 }
 
@@ -220,12 +228,17 @@ class SerializableKeyMapIterator<K extends Serializable, V> implements IterableI
 }
 
 export class SerializableValueSet<T extends Serializable> {
-  private valueMap: Map<string, T> = new Map();
+  private valueMap: Map<string, T>;
 
-  constructor(values?: T[]) {
-    if (values !== undefined) {
-      for (const value of values) {
-        this.add(value);
+  constructor(values?: T[], valueMap?: Map<string, T>) {
+    if (valueMap !== undefined) {
+      this.valueMap = valueMap;
+    } else {
+      this.valueMap = new Map();
+      if (values !== undefined) {
+        for (const value of values) {
+          this.add(value);
+        }
       }
     }
   }
@@ -248,6 +261,10 @@ export class SerializableValueSet<T extends Serializable> {
 
   clear() {
     this.valueMap.clear();
+  }
+
+  clone(): SerializableValueSet<T> {
+    return new SerializableValueSet(undefined, new Map(this.valueMap));
   }
 
   get size(): number {

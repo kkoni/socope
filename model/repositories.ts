@@ -1,7 +1,10 @@
 import { AppBskyActorDefs } from '@atproto/api';
 import { Actor as ActivityPubActor, getHandle, handleToAcctUri } from './activity-pub/data';
 import { getActorRepository as getActivityPubActorRepository } from './activity-pub/repositories';
-import { getActorRepository as getATProtoActorRepository } from './atproto/repositories';
+import {
+  getActorRepository as getATProtoActorRepository,
+  getPostRepository as getATProtoPostRepository,
+} from './atproto/repositories';
 import { SerializableKeyMap, getEpochSeconds } from './lib/util';
 import { EphemeralDataStorage, LongLivedDataStorage, StorageManager, getStorageManager } from './lib/storage';
 import {
@@ -10,6 +13,8 @@ import {
   Group,
   GroupId,
   Neighbors,
+  Post,
+  PostId,
   SNSType,
   SNSTypes,
   serializeGroup,
@@ -23,6 +28,7 @@ interface Singletons {
   groupRepository: GroupRepository;
   followsRepository: FollowsRepository;
   neighborsRepository: NeighborsRepository;
+  postRepository: PostRepository;
 }
 
 const singletons = {} as Singletons;
@@ -58,6 +64,13 @@ export async function getNeighborsRepository(): Promise<NeighborsRepository> {
     await singletons.neighborsRepository.load();
   }
   return singletons.neighborsRepository;
+}
+
+export function getPostRepository(): PostRepository {
+  if (!singletons.postRepository) {
+    singletons.postRepository = new PostRepository();
+  }
+  return singletons.postRepository;
 }
 
 const activityPubHandleRegex = /^[^@]+@[^@]+$/
@@ -362,5 +375,16 @@ export class NeighborsRepository {
         groupIds.splice(index, 1);
       }
     }
+  }
+}
+
+export class PostRepository {
+  async get(postIds: PostId[]): Promise<SerializableKeyMap<PostId, Post>> {
+    const atProtoPostIds = postIds.filter((postId) => postId.snsType === SNSTypes.ATProto);
+    const result = new SerializableKeyMap<PostId, Post>();
+    for (const [postId, post] of (await getATProtoPostRepository().get(atProtoPostIds)).entries()) {
+      result.set(postId, post);
+    }
+    return result;
   }
 }

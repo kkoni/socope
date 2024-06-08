@@ -1,6 +1,6 @@
 import { AppBskyFeedDefs } from '@atproto/api';
 import { SerializableKeyMap, SerializableValueSet, equalsAsSet, getEpochSeconds } from '../lib/util';
-import { ActorId, Group, Neighbor, PostId, SNSTypes } from '../data';
+import { ActorId, Group, Neighbor, Post, SNSTypes } from '../data';
 import { getActorRepository, getGroupRepository, getFollowsRepository, getNeighborsRepository } from '../repositories';
 import { PostIndex } from '../posts/data';
 import {
@@ -9,7 +9,7 @@ import {
 } from '../activity-pub/repositories';
 import {
   getFollowsClient as getATProtoFollowsClient,
-  getFeedClient as getATProtoFeedClient,
+  getFeedRepository as getATProtoFeedRepository,
 } from '../atproto/repositories';
 import {
   NeighborCrawlStatus,
@@ -568,7 +568,7 @@ class FeedFetchWorker {
 
   private async fetchATProtoFeed(actorId: ActorId, previousResult?: FeedFetchResult): Promise<{isSucceeded: boolean, mostRecentlyPostedAt?:Date}> {
     const actor = await getActorRepository().get(actorId);
-    const client = getATProtoFeedClient();
+    const feedRepository = getATProtoFeedRepository();
 
     function getPostedAt(post: AppBskyFeedDefs.FeedViewPost): Date|undefined {
       let parsed: number;
@@ -583,17 +583,15 @@ class FeedFetchWorker {
       return new Date(parsed);
     }
 
-    async function fetchPosts(limit: number, cursor?: string): Promise<{posts: AppBskyFeedDefs.FeedViewPost[], cursor?: string}> {
-      const response = await client.fetchAuthorFeed(actorId.value, limit, cursor);
-      const newPosts = response.posts.filter((post) => {
-        const postedAt = getPostedAt(post);
-        return postedAt !== undefined && (previousResult?.mostRecentlyPostedAt === undefined || previousResult.mostRecentlyPostedAt.getTime() < postedAt.getTime());
+    async function fetchPosts(limit: number, cursor?: string): Promise<{posts: Post[], cursor?: string}> {
+      const result = await feedRepository.fetchAuthorFeed(actorId, limit, cursor);
+      const newPosts = result.posts.filter((post) => {
+        return post.createdAt !== undefined && (previousResult?.mostRecentlyPostedAt === undefined || previousResult.mostRecentlyPostedAt.getTime() < post.createdAt.getTime());
       });
-      return { posts: newPosts, cursor: newPosts.length === limit ? response.cursor : undefined };
+      return { posts: newPosts, cursor: newPosts.length === limit ? result.cursor : undefined };
     }
 
-    async function storePostIndices(posts: AppBskyFeedDefs.FeedViewPost[]) {
-      console.log('actor ' + actor?.handle + ': feched posts=' + posts.length);
+    async function storePostIndices(posts: Post[]) {
       const groupIds = [
         ...(await (await getGroupRepository()).getGroupIdsByActor(actorId)),
         ...(await (await getNeighborsRepository()).getGroupIdsByActor(actorId)),
@@ -601,15 +599,11 @@ class FeedFetchWorker {
       const postIndexRepository = await getPostIndexRepository();
       
       for (const post of posts) {
-        if (post.reason !== undefined) continue;
-        const postedAt = Date.parse(post.post.indexedAt);
-        if (postedAt === undefined) continue;
         const postIndex: PostIndex = {
-          postId: new PostId(SNSTypes.ATProto, post.post.uri),
-          postedAt: new Date(postedAt),
+          postId: post.id,
+          postedAt: post.createdAt,
           postedBy: actorId,
         }
-        console.log('store postIndex of post=' + post.post.indexedAt);
         for (const groupId of groupIds) {
           await postIndexRepository.add(groupId, postIndex);
         }
@@ -629,7 +623,7 @@ class FeedFetchWorker {
         cursor = fetchResult.cursor;
       }
       await storePostIndices(posts);
-      const mostRecentlyPostedAt = (posts.map(getPostedAt).filter((x) => x !== undefined) as Date[])
+      const mostRecentlyPostedAt = (posts.map((post) => post.createdAt).filter((x) => x !== undefined) as Date[])
         .reduce((a, b) => a.getTime() > b.getTime() ? a : b);
       return {isSucceeded: true, mostRecentlyPostedAt };
     } catch(e) {

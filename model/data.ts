@@ -48,14 +48,14 @@ export function parseActorId(s: string): ActorId|undefined {
   return new ActorId(snsType, s.substring(colonIndex + 1));
 }
 
-function actorIdToSerializableObject(id: ActorId): any {
+export function actorIdToSerializableObject(id: ActorId): any {
   return {
     snsType: id.snsType,
     value: id.value,
   };
 }
 
-function serializableObjectToActorId(obj: any): ActorId|undefined {
+export function serializableObjectToActorId(obj: any): ActorId|undefined {
   if (obj && obj.snsType && obj.value) {
     const snsType = parseSNSType(obj.snsType);
     if (snsType) {
@@ -133,14 +133,14 @@ export class PostId implements Serializable {
   }
 }
 
-function postIdToSerializableObject(id: PostId): any {
+export function postIdToSerializableObject(id: PostId): any {
   return {
     snsType: id.snsType,
     value: id.value,
   };
 }
 
-function serializableObjectToPostId(obj: any): PostId|undefined {
+export function serializableObjectToPostId(obj: any): PostId|undefined {
   if (obj && obj.snsType && obj.value) {
     const snsType = parseSNSType(obj.snsType);
     if (snsType) {
@@ -160,12 +160,60 @@ export function deserializePostId(s: string): PostId|undefined {
 
 export interface Post {
   id: PostId;
-  rawData: any;
   authorId: ActorId;
-  createdAt?: Date;
+  createdAt: Date;
+  text: PostTextPart[];
+  embeddedImages: EmbeddedImage[];
   embeddedPostId?: PostId;
+  embeddedWebPage?: EmbeddedWebPage;
   reply?: Reply;
-  repost?: Repost;
+}
+
+export function serializePost(post: Post): string {
+  return JSON.stringify(postToSerializableObject(post));
+}
+
+export function deserializePost(s: string): Post|undefined {
+  return serializableObjectToPost(JSON.parse(s));
+}
+
+export function postToSerializableObject(post: Post): any {
+  return {
+    id: postIdToSerializableObject(post.id),
+    authorId: actorIdToSerializableObject(post.authorId),
+    createdAt: post.createdAt.toISOString(),
+    text: post.text.map(postTextPartToSerializableObject),
+    embeddedImages: post.embeddedImages.map(embeddedImageToSerializableObject),
+    embeddedPostId: post.embeddedPostId ? postIdToSerializableObject(post.embeddedPostId) : undefined,
+    embeddedWebPage: post.embeddedWebPage ? embeddedWebPageToSerializableObject(post.embeddedWebPage) : undefined,
+    reply: post.reply ? replyToSerializableObject(post.reply) : undefined,
+  };
+}
+
+export function serializableObjectToPost(obj: any): Post|undefined {
+  if (obj && obj.id && obj.authorId && obj.createdAt && obj.text && obj.embeddedImages) {
+    const id = serializableObjectToPostId(obj.id);
+    const authorId = serializableObjectToActorId(obj.authorId);
+    if (id && authorId) {
+      const createdAt = new Date(obj.createdAt);
+      const text = obj.text.map(serializableObjectToPostTextPart).filter((part: any) => part !== undefined) as PostTextPart[];
+      const embeddedImages = obj.embeddedImages.map(serializableObjectToEmbeddedImage).filter((image: any) => image !== undefined) as EmbeddedImage[];
+      const embeddedPostId = obj.embeddedPostId ? serializableObjectToPostId(obj.embeddedPostId) : undefined;
+      const embeddedWebPage = obj.embeddedWebPage ? serializableObjectToEmbeddedWebPage(obj.embeddedWebPage) : undefined;
+      const reply = obj.reply ? serializableObjectToReply(obj.reply) : undefined;
+      return {
+        id,
+        authorId,
+        createdAt,
+        text,
+        embeddedImages,
+        embeddedPostId,
+        embeddedWebPage,
+        reply,
+      };
+    }
+  }
+  return undefined;
 }
 
 export interface Reply {
@@ -173,9 +221,113 @@ export interface Reply {
   parentPostId: PostId;
 }
 
+export function replyToSerializableObject(reply: Reply): any {
+  return {
+    rootPostId: postIdToSerializableObject(reply.rootPostId),
+    parentPostId: postIdToSerializableObject(reply.parentPostId),
+  };
+}
+
+export function serializableObjectToReply(obj: any): Reply|undefined {
+  if (obj && obj.rootPostId && obj.parentPostId) {
+    const rootPostId = serializableObjectToPostId(obj.rootPostId);
+    const parentPostId = serializableObjectToPostId(obj.parentPostId);
+    if (rootPostId && parentPostId) {
+      return {
+        rootPostId,
+        parentPostId,
+      };
+    }
+  }
+  return undefined;
+}
+
+export interface PostTextPart {
+  text: string;
+  isHashtag: boolean;
+  linkUrl?: string;
+  mentionedActorId?: ActorId;
+}
+
+export function postTextPartToSerializableObject(part: PostTextPart): any {
+  return {
+    text: part.text,
+    isHashtag: part.isHashtag,
+    linkUrl: part.linkUrl,
+    mentionedActorId: part.mentionedActorId ? actorIdToSerializableObject(part.mentionedActorId) : undefined,
+  };
+}
+
+export function serializableObjectToPostTextPart(obj: any): PostTextPart|undefined {
+  if (obj && obj.text && obj.isHashtag) {
+    const mentionedActorId = obj.mentionedActorId ? serializableObjectToActorId(obj.mentionedActorId) : undefined;
+    return {
+      text: obj.text,
+      isHashtag: obj.isHashtag,
+      linkUrl: obj.linkUrl,
+      mentionedActorId,
+    };
+  }
+  return undefined;
+}
+
+export interface EmbeddedImage {
+  url: string;
+  width: number;
+  height: number;
+}
+
+export function embeddedImageToSerializableObject(image: EmbeddedImage): any {
+  return {
+    url: image.url,
+    width: image.width,
+    height: image.height,
+  };
+}
+
+export function serializableObjectToEmbeddedImage(obj: any): EmbeddedImage|undefined {
+  if (obj && obj.url && obj.width && obj.height) {
+    return {
+      url: obj.url,
+      width: obj.width,
+      height: obj.height,
+    };
+  }
+  return undefined;
+}
+
+export interface EmbeddedWebPage {
+  url: string;
+  title: string;
+  description: string;
+  thumbnailImageUrl?: string;
+}
+
+export function embeddedWebPageToSerializableObject(webPage: EmbeddedWebPage): any {
+  return {
+    url: webPage.url,
+    title: webPage.title,
+    description: webPage.description,
+    thumbnailImageUrl: webPage.thumbnailImageUrl,
+  };
+}
+
+export function serializableObjectToEmbeddedWebPage(obj: any): EmbeddedWebPage|undefined {
+  if (obj && obj.url && obj.title && obj.description) {
+    return {
+      url: obj.url,
+      title: obj.title,
+      description: obj.description,
+      thumbnailImageUrl: obj.thumbnailImageUrl,
+    };
+  }
+  return undefined;
+}
+
 export interface Repost {
-  by : ActorId;
-  indexedAt: Date;
+  repostedPostId: PostId;
+  createdBy: ActorId;
+  createdAt: Date;
 }
 
 export class GroupId implements Serializable {

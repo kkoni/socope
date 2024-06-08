@@ -83,3 +83,21 @@ export class DateHour {
     return new DateHour(new WrappedDate(date), date.getHours());
   }
 }
+
+const oneMinuteMillis = 60 * 1000;
+const oneHourMillis = 60 * oneMinuteMillis;
+const oneDayMillis = 24 * oneHourMillis;
+
+export function formatTimeDiff(diff: number): string {
+  if (diff < 0) {
+    return '0s';
+  } else if (diff < oneMinuteMillis) {
+    return `${Math.floor(diff / 1000)}s`;
+  } else if (diff < oneHourMillis) {
+    return `${Math.floor(diff / oneMinuteMillis)}m`;
+  } else if (diff < oneDayMillis) {
+    return `${Math.floor(diff / oneHourMillis)}h`;
+  } else {
+    return `${Math.floor(diff / oneDayMillis)}d`;
+  }
+}
