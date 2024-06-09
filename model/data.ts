@@ -167,6 +167,7 @@ export interface Post {
   embeddedPostId?: PostId;
   embeddedWebPage?: EmbeddedWebPage;
   reply?: Reply;
+  url?: string;
 }
 
 export function serializePost(post: Post): string {
@@ -187,6 +188,7 @@ export function postToSerializableObject(post: Post): any {
     embeddedPostId: post.embeddedPostId ? postIdToSerializableObject(post.embeddedPostId) : undefined,
     embeddedWebPage: post.embeddedWebPage ? embeddedWebPageToSerializableObject(post.embeddedWebPage) : undefined,
     reply: post.reply ? replyToSerializableObject(post.reply) : undefined,
+    url: post.url,
   };
 }
 
@@ -210,10 +212,26 @@ export function serializableObjectToPost(obj: any): Post|undefined {
         embeddedPostId,
         embeddedWebPage,
         reply,
+        url :obj.url,
       };
     }
   }
   return undefined;
+}
+
+export function getPostUrl(post: Post, actor?: Actor): string|undefined {
+  if (post.id.snsType === SNSTypes.ATProto) {
+    if (actor === undefined) {
+      return undefined;
+    }
+    const idLastSlashIndex = post.id.value.lastIndexOf("/");
+    if (idLastSlashIndex === -1) {
+      return undefined;
+    }
+    return 'https://bsky.app/profile/' + actor.handle + '/post/' + post.id.value.slice(idLastSlashIndex+1);
+  } else {
+    return post.url;
+  }
 }
 
 export interface Reply {

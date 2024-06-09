@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { ScrollView } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
+import { Divider } from 'react-native-paper';
 import { DateHour } from '../model/lib/date';
 import { SerializableValueSet, SerializableKeyMap } from '../model/lib/util';
 import { GroupId, PostId, Post } from '../model/data';
@@ -62,7 +63,10 @@ export default function GroupTimeline(props: Props) {
       return undefined;
     }
     return (
-      <PostView key={postIndex.postId.toString()} postIndex={postIndex} post={loadedPosts.get(postIndex.postId)}/>
+      <View key={postIndex.postId.toString()}>
+        <PostView postIndex={postIndex} post={loadedPosts.get(postIndex.postId)}/>
+        <Divider style={styles.divider}/>
+      </View>
     );
   }).filter(postView => postView !== undefined);
 
@@ -72,3 +76,7 @@ export default function GroupTimeline(props: Props) {
     </ScrollView>
   );
 }
+
+const styles = StyleSheet.create({
+  divider: { marginVertical: 5 },
+});
