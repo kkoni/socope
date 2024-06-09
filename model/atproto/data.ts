@@ -89,9 +89,9 @@ export function createPostFromPostView(postView: AppBskyFeedDefs.PostView): Post
   function createFacet(facetObj: any): Facet|undefined {
     if (
       facetObj.index === undefined ||
+      facetObj.index.byteStart === undefined ||
+      facetObj.index.byteEnd === undefined ||
       facetObj.features === undefined ||
-      facetObj.byteStart === undefined ||
-      facetObj.byteEnd === undefined ||
       !Array.isArray(facetObj.features) ||
       facetObj.features.length !== 1
     ) {
@@ -103,8 +103,8 @@ export function createPostFromPostView(postView: AppBskyFeedDefs.PostView): Post
           return undefined;
         }
         return {
-          byteStart: facetObj.byteStart,
-          byteEnd: facetObj.byteEnd,
+          byteStart: facetObj.index.byteStart,
+          byteEnd: facetObj.index.byteEnd,
           type: FacetTypes.Link,
           uri: facetObj.features[0].uri,
         } as LinkFacet;
@@ -113,8 +113,8 @@ export function createPostFromPostView(postView: AppBskyFeedDefs.PostView): Post
           return undefined;
         }
         return {
-          byteStart: facetObj.byteStart,
-          byteEnd: facetObj.byteEnd,
+          byteStart: facetObj.index.byteStart,
+          byteEnd: facetObj.index.byteEnd,
           type: FacetTypes.Hashtag,
           tag: facetObj.features[0].tag,
         } as HashtagFacet;
@@ -123,8 +123,8 @@ export function createPostFromPostView(postView: AppBskyFeedDefs.PostView): Post
           return undefined;
         }
         return {
-          byteStart: facetObj.byteStart,
-          byteEnd: facetObj.byteEnd,
+          byteStart: facetObj.index.byteStart,
+          byteEnd: facetObj.index.byteEnd,
           type: FacetTypes.Mention,
           did: facetObj.features[0].did,
         } as MentionFacet;

@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
 import { StyleSheet, Pressable, View } from 'react-native';
 import { Avatar, Text } from 'react-native-paper';
+import { Hyperlink } from 'react-native-hyperlink';
 import { linkHandler } from '../model/lib/util';
 import { formatTimeDiff } from '../model/lib/date';
+import { commonStyles } from '../model/lib/style';
 import { Actor, ActorId, Post, PostTextPart, getPostUrl } from '../model/data';
 import { getActorRepository } from '../model/repositories';
 import { PostIndex } from '../model/posts/data';
@@ -106,7 +108,20 @@ type ContentViewProps = {
 
 export function ContentView(props: ContentViewProps) {
   function getTextPartComponent(textPart: PostTextPart, index: number) {
-    return (<Text key={'tp-' + index}>{textPart.text}</Text>);
+    if (textPart.linkUrl !== undefined) {
+      return (
+        <Hyperlink
+          key={'tp-' + index}
+          linkText={textPart.text}
+          onPress={linkHandler}
+          linkStyle={commonStyles.link}
+        >
+          <Text>{textPart.linkUrl}</Text>
+        </Hyperlink>
+      );
+    } else {
+      return (<Text key={'tp-' + index}>{textPart.text}</Text>);
+    }
   }
   const textPartComponents = props.post.text.map((textPart, index) =>
     getTextPartComponent(textPart, index)
