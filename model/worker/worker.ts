@@ -17,12 +17,14 @@ import {
   NeighborCrawlFollowsFetchQueue,
   NeighborCrawlDataSet,
   FeedFetchResult,
+  GroupActors,
 } from './data';
 import {
   getNeighborCrawlResultRepository,
   getNeighborCrawlStatusRepository,
   getFeedFetchQueue,
   getFeedFetchResultRepository,
+  getGroupActorMapping,
 } from './repositories';
 import { getPostIndexRepository } from '../posts/repositories';
 
@@ -464,6 +466,7 @@ const errorFeedFetchIntervalMillis = 60 * 60 * 1000;
 
 class FeedFetchEnqueueWorker {
   private static intervalMillis = 10000;
+  private static closeNeighborLimit = 20;
 
   private clearInterval: any|undefined;
 
@@ -478,13 +481,37 @@ class FeedFetchEnqueueWorker {
   }
 
   private async execute(): Promise<void> {
+    function sortAndSliceNeighbors(neighbors: Neighbor[]): ActorId[] {
+      const result = [...neighbors];
+      result.sort((a, b) => b.score - a.score);
+      return result.slice(0, FeedFetchEnqueueWorker.closeNeighborLimit)
+        .map((n) => n.actorId);;
+    }
+
+    async function getGroupActors(group: Group): Promise<GroupActors> {
+      const neighbors = await (await getNeighborsRepository()).get(group.id);
+      const closeNeighborIds: ActorId[] = [];
+      if (neighbors !== undefined) {
+        const atProtoCloseNeighborIds = sortAndSliceNeighbors(neighbors.atProtoNeighbors);
+        const activityPubCloseNeighborIds = sortAndSliceNeighbors(neighbors.activityPubNeighbors);
+        closeNeighborIds.push(...atProtoCloseNeighborIds, ...activityPubCloseNeighborIds);
+      }
+      return { groupId: group.id, actorIds: group.actorIds, closeNeighborIds };
+    }
+
     try {
       const groupRepository = await getGroupRepository();
       const feedFetchQueue = getFeedFetchQueue();
       const feedFetchResultRepository = await getFeedFetchResultRepository();
+      const groupActorMapping = getGroupActorMapping();
       const groups = await groupRepository.getAll();
+      const groupActorsArray: GroupActors[] = [];
       for (const group of groups) {
-        for (const actorId of group.actorIds) {
+        groupActorsArray.push(await getGroupActors(group));
+      }
+      groupActorMapping.setGroupActors(groupActorsArray);
+      for (const groupActors of groupActorsArray) {
+        for (const actorId of [...groupActors.actorIds, ...groupActors.closeNeighborIds]) {
           if (!feedFetchQueue.has(actorId)) {
             const previousResult = await feedFetchResultRepository.get(actorId);
             if (previousResult === undefined) {
@@ -541,6 +568,11 @@ class FeedFetchWorker {
   }
 
   private async fetchFeed(actorId: ActorId): Promise<void> {
+    const groupActorMapping = getGroupActorMapping();
+    if (!groupActorMapping.hasActor(actorId)) {
+      return;
+    }
+
     const feedFetchResultRepository = await getFeedFetchResultRepository();
     const feedFetchQueue = getFeedFetchQueue();
     const previousResult = await feedFetchResultRepository.get(actorId);
@@ -570,19 +602,6 @@ class FeedFetchWorker {
     const actor = await getActorRepository().get(actorId);
     const feedRepository = getATProtoFeedRepository();
 
-    function getPostedAt(post: AppBskyFeedDefs.FeedViewPost): Date|undefined {
-      let parsed: number;
-      if (post.reason === undefined) {
-        parsed = Date.parse(post.post.indexedAt);
-      } else {
-        parsed = Date.parse(post.reason.indexedAt as string);
-      }
-      if (isNaN(parsed)) {
-        return undefined;
-      }
-      return new Date(parsed);
-    }
-
     async function fetchPosts(limit: number, cursor?: string): Promise<{posts: Post[], cursor?: string}> {
       const result = await feedRepository.fetchAuthorFeed(actorId, limit, cursor);
       const newPosts = result.posts.filter((post) => {
@@ -592,10 +611,7 @@ class FeedFetchWorker {
     }
 
     async function storePostIndices(posts: Post[]) {
-      const groupIds = [
-        ...(await (await getGroupRepository()).getGroupIdsByActor(actorId)),
-        ...(await (await getNeighborsRepository()).getGroupIdsByActor(actorId)),
-      ];
+      const groupIds = getGroupActorMapping().getCloseGroupIds(actorId);
       const postIndexRepository = await getPostIndexRepository();
       
       for (const post of posts) {

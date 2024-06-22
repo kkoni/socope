@@ -1,5 +1,5 @@
 import { EphemeralDataStorage, LongLivedDataStorage, StorageManager, getStorageManager } from '../lib/storage';
-import { PriorityQueue } from '../lib/util';
+import { PriorityQueue, SerializableKeyMap, SerializableValueSet } from '../lib/util';
 import { ActorId, GroupId } from '../data';
 import {
   FeedFetchResult,
@@ -8,6 +8,7 @@ import {
   NeighborCrawlFollowsFetchQueue,
   NeighborCrawlFollowsFetchBuffer,
   NeighborCrawlDataSet,
+  GroupActors,
   deserializeNeighborCrawlResult,
   serializeNeighborCrawlResult,
   deserializeFeedFetchResult,
@@ -19,6 +20,7 @@ interface Singletons {
   neighborCrawlStatusRepository: NeighborCrawlStatusRepository;
   feedFetchResultRepository: FeedFetchResultRepository;
   feedFetchQueue: FeedFetchQueue;
+  groupActorMapping: GroupActorMapping;
 }
 
 const singletons = {} as Singletons;
@@ -52,6 +54,13 @@ export function getFeedFetchQueue(): FeedFetchQueue {
     singletons.feedFetchQueue = new FeedFetchQueue();
   }
   return singletons.feedFetchQueue;
+}
+
+export function getGroupActorMapping(): GroupActorMapping {
+  if (!singletons.groupActorMapping) {
+    singletons.groupActorMapping = new GroupActorMapping();
+  }
+  return singletons.groupActorMapping;
 }
 
 export class NeighborCrawlResultRepository {
@@ -208,5 +217,36 @@ export class FeedFetchQueue {
 
   has(actorId: ActorId): boolean {
     return this.queue.has(actorId);
+  }
+}
+
+export class GroupActorMapping {
+  private allActorIds = new SerializableValueSet<ActorId>();
+  private actorToCloseGroupsMap = new SerializableKeyMap<ActorId, GroupId[]>();
+
+  setGroupActors(groupActorsArray: GroupActors[]) {
+    this.allActorIds.clear();
+    this.actorToCloseGroupsMap.clear();
+    for (const groupActors of groupActorsArray) {
+      const { groupId, actorIds, closeNeighborIds } = groupActors;
+      const actorIdSet = new SerializableValueSet<ActorId>([...actorIds, ...closeNeighborIds]);
+      for (const actorId of actorIdSet.values()) {
+        this.allActorIds.add(actorId);
+        let groups = this.actorToCloseGroupsMap.get(actorId);
+        if (groups === undefined) {
+          groups = [];
+          this.actorToCloseGroupsMap.set(actorId, groups);
+        }
+        groups.push(groupId);
+      }
+    }    
+  }
+
+  hasActor(actorId: ActorId): boolean {
+    return this.allActorIds.has(actorId);
+  }
+
+  getCloseGroupIds(actorId: ActorId): GroupId[] {
+    return this.actorToCloseGroupsMap.get(actorId) ?? [];
   }
 }

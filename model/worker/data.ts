@@ -161,3 +161,9 @@ export function serializeFeedFetchResult(result: FeedFetchResult): string {
 export function deserializeFeedFetchResult(s: string): FeedFetchResult|undefined {
   return serializableObjectToFeedFetchResult(JSON.parse(s));
 }
+
+export interface GroupActors {
+  groupId: GroupId;
+  actorIds: ActorId[];
+  closeNeighborIds: ActorId[];
+}
