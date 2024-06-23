@@ -1,7 +1,6 @@
-import { AppBskyFeedDefs } from '@atproto/api';
 import { SerializableKeyMap, SerializableValueSet, equalsAsSet, getEpochSeconds } from '../lib/util';
 import { ActorId, Group, Neighbor, Post, SNSTypes } from '../data';
-import { getActorRepository, getGroupRepository, getFollowsRepository, getNeighborsRepository } from '../repositories';
+import { getGroupRepository, getFollowsRepository, getNeighborsRepository } from '../repositories';
 import { PostIndex } from '../posts/data';
 import {
   getActorRepository as getActivityPubActorRepository,
@@ -461,12 +460,13 @@ class NeighborCrawlWorker {
   }
 }
 
-const successFeedFetchIntervalMillis = 10 * 60 * 1000;
-const errorFeedFetchIntervalMillis = 60 * 60 * 1000;
+const memberSuccessFeedFetchIntervalMillis = 10 * 60 * 1000;
+const memberErrorFeedFetchIntervalMillis = 60 * 60 * 1000;
+const neighborSuccessFeedFetchIntervalMillis = 60 * 60 * 1000;
+const neighborErrorFeedFetchIntervalMillis = 6 * 60 * 60 * 1000;
 
 class FeedFetchEnqueueWorker {
   private static intervalMillis = 10000;
-  private static closeNeighborLimit = 20;
 
   private clearInterval: any|undefined;
 
@@ -481,28 +481,34 @@ class FeedFetchEnqueueWorker {
   }
 
   private async execute(): Promise<void> {
-    function sortAndSliceNeighbors(neighbors: Neighbor[]): ActorId[] {
-      const result = [...neighbors];
-      result.sort((a, b) => b.score - a.score);
-      return result.slice(0, FeedFetchEnqueueWorker.closeNeighborLimit)
-        .map((n) => n.actorId);;
-    }
-
     async function getGroupActors(group: Group): Promise<GroupActors> {
       const neighbors = await (await getNeighborsRepository()).get(group.id);
-      const closeNeighborIds: ActorId[] = [];
-      if (neighbors !== undefined) {
-        const atProtoCloseNeighborIds = sortAndSliceNeighbors(neighbors.atProtoNeighbors);
-        const activityPubCloseNeighborIds = sortAndSliceNeighbors(neighbors.activityPubNeighbors);
-        closeNeighborIds.push(...atProtoCloseNeighborIds, ...activityPubCloseNeighborIds);
+      const neighborIds: ActorId[] = [
+        ...neighbors?.atProtoNeighbors?.map((n) => n.actorId) ?? [],
+        ...neighbors?.activityPubNeighbors?.map((n) => n.actorId) ?? [],
+      ];
+      return { groupId: group.id, memberIds: group.actorIds, neighborIds: neighborIds };
+    }
+
+    async function enqueueNewActors(actorIds: ActorId[], successIntervalMillis: number, errorIntervalMillis: number) {
+      const feedFetchResultRepository = await getFeedFetchResultRepository();
+      const feedFetchQueue = getFeedFetchQueue();
+      for (const actorId of actorIds) {
+        if (!feedFetchQueue.has(actorId)) {
+          const previousResult = await feedFetchResultRepository.get(actorId);
+          if (previousResult === undefined) {
+            feedFetchQueue.enqueue(actorId, new Date());
+          } else if (previousResult.isSucceeded) {
+            feedFetchQueue.enqueue(actorId, new Date(previousResult.fetchedAt.getTime() + successIntervalMillis));
+          } else {
+            feedFetchQueue.enqueue(actorId, new Date(previousResult.fetchedAt.getTime() + errorIntervalMillis));
+          }
+        }
       }
-      return { groupId: group.id, actorIds: group.actorIds, closeNeighborIds };
     }
 
     try {
       const groupRepository = await getGroupRepository();
-      const feedFetchQueue = getFeedFetchQueue();
-      const feedFetchResultRepository = await getFeedFetchResultRepository();
       const groupActorMapping = getGroupActorMapping();
       const groups = await groupRepository.getAll();
       const groupActorsArray: GroupActors[] = [];
@@ -510,20 +516,8 @@ class FeedFetchEnqueueWorker {
         groupActorsArray.push(await getGroupActors(group));
       }
       groupActorMapping.setGroupActors(groupActorsArray);
-      for (const groupActors of groupActorsArray) {
-        for (const actorId of [...groupActors.actorIds, ...groupActors.closeNeighborIds]) {
-          if (!feedFetchQueue.has(actorId)) {
-            const previousResult = await feedFetchResultRepository.get(actorId);
-            if (previousResult === undefined) {
-              feedFetchQueue.enqueue(actorId, new Date());
-            } else if (previousResult.isSucceeded) {
-              feedFetchQueue.enqueue(actorId, new Date(previousResult.fetchedAt.getTime() + successFeedFetchIntervalMillis));
-            } else {
-              feedFetchQueue.enqueue(actorId, new Date(previousResult.fetchedAt.getTime() + errorFeedFetchIntervalMillis));
-            }
-          }
-        }
-      }
+      enqueueNewActors(groupActorMapping.getAllMemberIds(), memberSuccessFeedFetchIntervalMillis, memberErrorFeedFetchIntervalMillis);
+      enqueueNewActors(groupActorMapping.getAllNeighborIds(), neighborSuccessFeedFetchIntervalMillis, neighborErrorFeedFetchIntervalMillis);
     } catch(e) {
       console.error('FeedFetchWorker error', e);
     }
@@ -569,49 +563,51 @@ class FeedFetchWorker {
 
   private async fetchFeed(actorId: ActorId): Promise<void> {
     const groupActorMapping = getGroupActorMapping();
-    if (!groupActorMapping.hasActor(actorId)) {
+    if (!groupActorMapping.includes(actorId)) {
       return;
     }
+    const isMember = groupActorMapping.includesAsMember(actorId);
 
-    const feedFetchResultRepository = await getFeedFetchResultRepository();
-    const feedFetchQueue = getFeedFetchQueue();
-    const previousResult = await feedFetchResultRepository.get(actorId);
-
-    let fetchResult: {isSucceeded: boolean, mostRecentlyPostedAt?: Date};
-    if (actorId.snsType === SNSTypes.ATProto) {
-      fetchResult = await this.fetchATProtoFeed(actorId, previousResult);
-    } else {
-      fetchResult = {isSucceeded: true};
-    }
-    feedFetchResultRepository.store(
-      {
-        actorId,
-        fetchedAt: new Date(),
-        isSucceeded: fetchResult.isSucceeded,
-        mostRecentlyPostedAt: fetchResult.mostRecentlyPostedAt ?? previousResult?.mostRecentlyPostedAt,
+    async function fetchATProtoFeed(actorId: ActorId, previousResult?: FeedFetchResult): Promise<{isSucceeded: boolean, mostRecentlyPostedAt?:Date}> {
+      const feedRepository = getATProtoFeedRepository();
+  
+      async function fetchPosts(limit: number, cursor?: string): Promise<{posts: Post[], cursor?: string}> {
+        const result = await feedRepository.fetchAuthorFeed(actorId, limit, cursor);
+        const newPosts = result.posts.filter((post) => {
+          return post.createdAt !== undefined && (previousResult?.mostRecentlyPostedAt === undefined || previousResult.mostRecentlyPostedAt.getTime() < post.createdAt.getTime());
+        });
+        return { posts: newPosts, cursor: newPosts.length === limit ? result.cursor : undefined };
       }
-    );
-    if (fetchResult.isSucceeded) {
-      feedFetchQueue.enqueue(actorId, new Date(Date.now() + successFeedFetchIntervalMillis));
-    } else {
-      feedFetchQueue.enqueue(actorId, new Date(Date.now() + errorFeedFetchIntervalMillis));
+  
+      try {
+        const firstFetchResult = await fetchPosts(1);
+        if (firstFetchResult.posts.length === 0) {
+          return {isSucceeded: true};
+        }
+        const posts = [...firstFetchResult.posts];
+        let cursor: string|undefined = firstFetchResult.cursor;
+        while(cursor !== undefined && posts.length < FeedFetchWorker.limitPerActor) {
+          const fetchResult = await fetchPosts(FeedFetchWorker.limitPerFetch, cursor);
+          posts.push(...fetchResult.posts);
+          cursor = fetchResult.cursor;
+        }
+        await processPosts(posts);
+        const mostRecentlyPostedAt = (posts.map((post) => post.createdAt).filter((x) => x !== undefined) as Date[])
+          .reduce((a, b) => a.getTime() > b.getTime() ? a : b);
+        return {isSucceeded: true, mostRecentlyPostedAt };
+      } catch(e) {
+        console.error('FeedFetchWorker error', e);
+        return {isSucceeded: false};
+      }
     }
-  }
 
-  private async fetchATProtoFeed(actorId: ActorId, previousResult?: FeedFetchResult): Promise<{isSucceeded: boolean, mostRecentlyPostedAt?:Date}> {
-    const actor = await getActorRepository().get(actorId);
-    const feedRepository = getATProtoFeedRepository();
-
-    async function fetchPosts(limit: number, cursor?: string): Promise<{posts: Post[], cursor?: string}> {
-      const result = await feedRepository.fetchAuthorFeed(actorId, limit, cursor);
-      const newPosts = result.posts.filter((post) => {
-        return post.createdAt !== undefined && (previousResult?.mostRecentlyPostedAt === undefined || previousResult.mostRecentlyPostedAt.getTime() < post.createdAt.getTime());
-      });
-      return { posts: newPosts, cursor: newPosts.length === limit ? result.cursor : undefined };
+    async function processPosts(posts: Post[]) {
+      storePostIndex(posts);
+      countReferences(posts);
     }
 
-    async function storePostIndices(posts: Post[]) {
-      const groupIds = getGroupActorMapping().getCloseGroupIds(actorId);
+    async function storePostIndex(posts: Post[]) {
+      const groupIds = groupActorMapping.getMemberGroupIds(actorId);
       const postIndexRepository = await getPostIndexRepository();
       
       for (const post of posts) {
@@ -626,27 +622,46 @@ class FeedFetchWorker {
       }
     }
 
-    try {
-      const firstFetchResult = await fetchPosts(1);
-      if (firstFetchResult.posts.length === 0) {
-        return {isSucceeded: true};
-      }
-      const posts = [...firstFetchResult.posts];
-      let cursor: string|undefined = firstFetchResult.cursor;
-      while(cursor !== undefined && posts.length < FeedFetchWorker.limitPerActor) {
-        const fetchResult = await fetchPosts(FeedFetchWorker.limitPerFetch, cursor);
-        posts.push(...fetchResult.posts);
-        cursor = fetchResult.cursor;
-      }
-      await storePostIndices(posts);
-      const mostRecentlyPostedAt = (posts.map((post) => post.createdAt).filter((x) => x !== undefined) as Date[])
-        .reduce((a, b) => a.getTime() > b.getTime() ? a : b);
-      return {isSucceeded: true, mostRecentlyPostedAt };
-    } catch(e) {
-      console.error('FeedFetchWorker error', e);
-      return {isSucceeded: false};
+    async function countReferences(posts: Post[]) {
+      // TODO: implementations
     }
+
+    const feedFetchResultRepository = await getFeedFetchResultRepository();
+    const feedFetchQueue = getFeedFetchQueue();
+    const previousResult = await feedFetchResultRepository.get(actorId);
+
+    let fetchResult: {isSucceeded: boolean, mostRecentlyPostedAt?: Date};
+    if (actorId.snsType === SNSTypes.ATProto) {
+      fetchResult = await fetchATProtoFeed(actorId, previousResult);
+    } else {
+      fetchResult = {isSucceeded: true};
+    }
+    feedFetchResultRepository.store(
+      {
+        actorId,
+        fetchedAt: new Date(),
+        isSucceeded: fetchResult.isSucceeded,
+        mostRecentlyPostedAt: fetchResult.mostRecentlyPostedAt ?? previousResult?.mostRecentlyPostedAt,
+      }
+    );
+    let intervalMillis: number;
+    if (fetchResult.isSucceeded) {
+      if (isMember) {
+        intervalMillis = memberSuccessFeedFetchIntervalMillis;
+      } else {
+        intervalMillis = neighborSuccessFeedFetchIntervalMillis;
+      }
+    } else {
+      if (isMember) {
+        intervalMillis = memberErrorFeedFetchIntervalMillis;
+      } else {
+        intervalMillis = neighborErrorFeedFetchIntervalMillis;
+      }
+    }
+    feedFetchQueue.enqueue(actorId, new Date(Date.now() + intervalMillis));
   }
+
+
 }
 
 class PostIndexFlushWorker {

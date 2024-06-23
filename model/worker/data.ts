@@ -164,6 +164,6 @@ export function deserializeFeedFetchResult(s: string): FeedFetchResult|undefined
 
 export interface GroupActors {
   groupId: GroupId;
-  actorIds: ActorId[];
-  closeNeighborIds: ActorId[];
+  memberIds: ActorId[];
+  neighborIds: ActorId[];
 }

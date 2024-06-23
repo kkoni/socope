@@ -192,6 +192,10 @@ export class SerializableKeyMap<K extends Serializable, V> {
     this.valueMap.clear();
   }
 
+  public keys(): IterableIterator<K> {
+    return this.keyMap.values();
+  }
+
   public entries(): IterableIterator<[K, V]> {
     return new SerializableKeyMapIterator(this.keyMap.values(), this.valueMap);
   }

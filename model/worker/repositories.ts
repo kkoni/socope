@@ -222,31 +222,60 @@ export class FeedFetchQueue {
 
 export class GroupActorMapping {
   private allActorIds = new SerializableValueSet<ActorId>();
-  private actorToCloseGroupsMap = new SerializableKeyMap<ActorId, GroupId[]>();
+  private memberToGroupsMap = new SerializableKeyMap<ActorId, GroupId[]>();
+  private neighborToGroupsMap = new SerializableKeyMap<ActorId, GroupId[]>();
 
   setGroupActors(groupActorsArray: GroupActors[]) {
     this.allActorIds.clear();
-    this.actorToCloseGroupsMap.clear();
+    this.memberToGroupsMap.clear();
+    this.neighborToGroupsMap.clear();
     for (const groupActors of groupActorsArray) {
-      const { groupId, actorIds, closeNeighborIds } = groupActors;
-      const actorIdSet = new SerializableValueSet<ActorId>([...actorIds, ...closeNeighborIds]);
-      for (const actorId of actorIdSet.values()) {
-        this.allActorIds.add(actorId);
-        let groups = this.actorToCloseGroupsMap.get(actorId);
+      const { groupId, memberIds, neighborIds } = groupActors;
+      for (const memberId of memberIds) {
+        this.allActorIds.add(memberId);
+        let groups = this.memberToGroupsMap.get(memberId);
         if (groups === undefined) {
           groups = [];
-          this.actorToCloseGroupsMap.set(actorId, groups);
+          this.memberToGroupsMap.set(memberId, groups);
         }
         groups.push(groupId);
+      }
+      const memberIdSet = new SerializableValueSet<ActorId>([...memberIds]);
+      for (const neighborId of neighborIds) {
+        this.allActorIds.add(neighborId);
+        if (!memberIdSet.has(neighborId)) {
+          let groups = this.neighborToGroupsMap.get(neighborId);
+          if (groups === undefined) {
+            groups = [];
+            this.neighborToGroupsMap.set(neighborId, groups);
+          }
+          groups.push(groupId);
+        }
       }
     }    
   }
 
-  hasActor(actorId: ActorId): boolean {
+  includes(actorId: ActorId): boolean {
     return this.allActorIds.has(actorId);
   }
 
-  getCloseGroupIds(actorId: ActorId): GroupId[] {
-    return this.actorToCloseGroupsMap.get(actorId) ?? [];
+  includesAsMember(actorId: ActorId): boolean {
+    return this.memberToGroupsMap.has(actorId);
+  }
+
+  getMemberGroupIds(actorId: ActorId): GroupId[] {
+    return this.memberToGroupsMap.get(actorId) ?? [];
+  }
+
+  getNeighborGroupIds(actorId: ActorId): GroupId[] {
+    return this.neighborToGroupsMap.get(actorId) ?? [];
+  }
+
+  getAllMemberIds(): ActorId[] {
+    return [...this.memberToGroupsMap.keys()];
+  }
+
+  getAllNeighborIds(): ActorId[] {
+    return [...this.neighborToGroupsMap.keys()];
   }
 }
