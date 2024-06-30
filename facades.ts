@@ -3,13 +3,13 @@ import { getGroupRepository } from './model/repositories';
 
 export async function createGroup(
   name: string,
-  actorIds: ActorId[],
+  memberIds: ActorId[],
   allGroupsStateHook: [Group[], (g: Group[]) => void],
   jumpedGroupIdStateHook: [GroupId|undefined, (id: GroupId|undefined) => void]
 ) {
   const [ allGroups, setAllGroups ] = allGroupsStateHook;
   const [ _, setJumpedGroupId ] = jumpedGroupIdStateHook;
-  const group = await (await getGroupRepository()).create(name, actorIds);
+  const group = await (await getGroupRepository()).create(name, memberIds);
   setAllGroups([...allGroups, group]);
   setJumpedGroupId(group.id);
 }

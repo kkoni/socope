@@ -134,7 +134,6 @@ export class GroupRepository {
   private nextId: GroupId|undefined;
   private storageManager: StorageManager;
   private longLivedDataStorage: LongLivedDataStorage<Group>;
-  private actorGroupMap: SerializableKeyMap<ActorId, GroupId[]> = new SerializableKeyMap();
 
   constructor(storageManager: StorageManager) {
     this.storageManager = storageManager;
@@ -152,52 +151,26 @@ export class GroupRepository {
     if (loadedNextId !== undefined) {
       this.nextId = new GroupId(parseInt(loadedNextId, 10));
     }
-    for (const group of await this.longLivedDataStorage.getAll()) {
-      for (const actorId of group.actorIds) {
-        this.addActorToGroup(actorId, group.id);
-      }
-    }
   }
 
-  async create(name: string, actorIds: ActorId[]): Promise<Group> {
+  async create(name: string, memberIds: ActorId[]): Promise<Group> {
     const newId = this.nextId || new GroupId(1);
     this.nextId = new GroupId(newId.value + 1);
     await this.storageManager.storeLongLivedData(GroupRepository.nextIdStorageKey, this.nextId.value.toString());
 
-    const newGroup: Group = { id: newId, name, actorIds };
+    const newGroup: Group = { id: newId, name, memberIds };
     await this.store(newGroup);
-    for (const actorId of actorIds) {
-      this.addActorToGroup(actorId, newId);
-    }
     return newGroup;
   }
 
   async store(group: Group): Promise<void> {
     const oldGroup = await this.longLivedDataStorage.get(group.id.value.toString());
     await this.longLivedDataStorage.store(group.id.value.toString(), group);
-    if (oldGroup !== undefined) {
-      const {added, removed} = this.getActorDiff(oldGroup.actorIds, group.actorIds);
-      for (const actorId of added) {
-        this.addActorToGroup(actorId, group.id);
-      }
-      for (const actorId of removed) {
-        this.removeActorFromGroup(actorId, group.id);
-      }
-    } else {
-      for (const actorId of group.actorIds) {
-        this.addActorToGroup(actorId, group.id);
-      }
-    }
   }
 
   async delete(id: GroupId): Promise<void> {
     const group = await this.longLivedDataStorage.get(id.value.toString());
     await this.longLivedDataStorage.delete(id.value.toString());
-    if (group !== undefined) {
-      for (const actorId of group.actorIds) {
-        this.removeActorFromGroup(actorId, id);
-      }
-    }
   }
 
   async get(id: GroupId): Promise<Group | undefined> {
@@ -210,46 +183,6 @@ export class GroupRepository {
 
   async getNextId(): Promise<GroupId> {
     return this.nextId || new GroupId(1);
-  }
-
-  async getGroupIdsByActor(actorId: ActorId): Promise<GroupId[]> {
-    return this.actorGroupMap.get(actorId) || [];
-  }
-
-  private addActorToGroup(actorId: ActorId, groupId: GroupId) {
-    const groupIds = this.actorGroupMap.get(actorId);
-    if (groupIds === undefined) {
-      this.actorGroupMap.set(actorId, [groupId]);
-    } else {
-      groupIds.push(groupId);
-    }
-  }
-
-  private removeActorFromGroup(actorId: ActorId, groupId: GroupId) {
-    const groupIds = this.actorGroupMap.get(actorId);
-    if (groupIds === undefined) {
-      return;
-    }
-    const index = groupIds.findIndex((gid) => gid.equals(groupId));
-    if (index !== -1) {
-      groupIds.splice(index, 1);
-    }
-  }
-
-  private getActorDiff(oldActorIds: ActorId[], newActorIds: ActorId[]): {added: ActorId[], removed: ActorId[]} {
-    const added: ActorId[] = [];
-    const removed: ActorId[] = [];
-    for (const actorId of newActorIds) {
-      if (!oldActorIds.some((oldActorId) => oldActorId.equals(actorId))) {
-        added.push(actorId);
-      }
-    }
-    for (const actorId of oldActorIds) {
-      if (!newActorIds.some((newActorId) => newActorId.equals(actorId))) {
-        removed.push(actorId);
-      }
-    }
-    return {added, removed};
   }
 }
 
@@ -313,7 +246,6 @@ export class NeighborsRepository {
   private static storageKeyPrefix = 'NeighborsRepository.storage';
 
   private storage: LongLivedDataStorage<Neighbors>;
-  private actorGroupMap: SerializableKeyMap<ActorId, GroupId[]> = new SerializableKeyMap();
 
   constructor(storageManager: StorageManager) {
     this.storage = new LongLivedDataStorage(
@@ -326,55 +258,18 @@ export class NeighborsRepository {
 
   async load(): Promise<void> {
     await this.storage.load();
-    for (const neighbors of await this.storage.getAll()) {
-      this.addToActorGroupMap(neighbors);
-    }
   }
 
-  async store(groupId: GroupId, neighbors: Neighbors): Promise<void> {
-    await this.storage.store(groupId.toString(), neighbors);
-    this.removeGroupFromActorGroupMap(groupId);
-    this.addToActorGroupMap(neighbors);
+  async store(neighbors: Neighbors): Promise<void> {
+    await this.storage.store(neighbors.groupId.toString(), neighbors);
   }
 
   async get(groupId: GroupId): Promise<Neighbors|undefined> {
     return await this.storage.get(groupId.toString());
   }
 
-  async getGroupIdsByActor(actorId: ActorId): Promise<GroupId[]> {
-    return this.actorGroupMap.get(actorId) || [];
-  }
-
   async delete(groupId: GroupId): Promise<void> {
     await this.storage.delete(groupId.toString());
-    this.removeGroupFromActorGroupMap(groupId);
-  }
-
-  private addToActorGroupMap(neighbors: Neighbors) {
-    for (const neighbor of neighbors.activityPubNeighbors) {
-      this.addActorToGroup(neighbor.actorId, neighbors.groupId);
-    }
-    for (const neighbor of neighbors.atProtoNeighbors) {
-      this.addActorToGroup(neighbor.actorId, neighbors.groupId);
-    }
-  }
-
-  private addActorToGroup(actorId: ActorId, groupId: GroupId) {
-    const groupIds = this.actorGroupMap.get(actorId);
-    if (groupIds === undefined) {
-      this.actorGroupMap.set(actorId, [groupId]);
-    } else {
-      groupIds.push(groupId);
-    }
-  }
-
-  private removeGroupFromActorGroupMap(groupId: GroupId) {
-    for (const [actorId, groupIds] of this.actorGroupMap.entries()) {
-      const index = groupIds.findIndex((gid) => gid.equals(groupId));
-      if (index !== -1) {
-        groupIds.splice(index, 1);
-      }
-    }
   }
 }
 

@@ -70,10 +70,10 @@ export default function GroupDetailScreen() {
       if (group !== undefined) {
         const actorRepository = getActorRepository();
         const actors = new SerializableKeyMap<ActorId, Actor>();
-        for (const actorId of group.actorIds) {
-          const actor = await actorRepository.get(actorId);
-          if (actor !== undefined) {
-            actors.set(actor.id, actor);
+        for (const memberId of group.memberIds) {
+          const member = await actorRepository.get(memberId);
+          if (member !== undefined) {
+            actors.set(member.id, member);
           }
         }
         setActors(actors);
@@ -115,7 +115,7 @@ export default function GroupDetailScreen() {
       { inEditMode &&
         <GroupEditorView
           group={group}
-          currentActors={actors}
+          currentMembers={actors}
           neighbors={neighbors}
           closeNeighbors={closeNeighbors}
           updateGroupHandler={updateGroup}
@@ -186,10 +186,10 @@ function GroupDetailView(props: GroupDetailViewProps) {
     </View>
   );
 
-  const activityPubActorViews = props.group.actorIds.filter(aid => aid.snsType === SNSTypes.ActivityPub).map(actorId => {
+  const activityPubActorViews = props.group.memberIds.filter(aid => aid.snsType === SNSTypes.ActivityPub).map(actorId => {
     return createActorView(actorId, props.actors.get(actorId));
   });
-  const atProtoActorViews = props.group.actorIds.filter(aid => aid.snsType === SNSTypes.ATProto).map(actorId => {
+  const atProtoActorViews = props.group.memberIds.filter(aid => aid.snsType === SNSTypes.ATProto).map(actorId => {
     return createActorView(actorId, props.actors.get(actorId));
   });
   const activityPubNeighborViews = props.neighbors === undefined ? [] : props.neighbors.activityPubNeighbors.slice(0, neighborCountToShow).map(neighbor => {
@@ -270,15 +270,15 @@ const groupDetailStyles = StyleSheet.create({
 
 type GroupEditorViewProps = {
   group: Group;
-  currentActors: SerializableKeyMap<ActorId, Actor>;
+  currentMembers: SerializableKeyMap<ActorId, Actor>;
   neighbors: Neighbors|undefined;
   closeNeighbors: SerializableKeyMap<ActorId, Actor>;
   updateGroupHandler: () => void;
   cancelEditHandler: () => void;
 }
 
-type GroupEditorActorStatus = {
-  actorId: ActorId;
+type GroupEditorMemberStatus = {
+  memberId: ActorId;
   actor: Actor|undefined;
   status: 'added'|'removed'|'unchanged';
 };
@@ -287,48 +287,48 @@ function GroupEditorView(props: GroupEditorViewProps) {
   const [ allGroups, setAllGroups ] = useRecoilState(allGroupsState);
   const [ groupName, setGroupName ] = useState<string>('');
   const [ handle, setHandle ] = useState<string>('');
-  const [ actors, setActors ] = useState<GroupEditorActorStatus[]>([]);
+  const [ memberStatuses, setMemberStatuses ] = useState<GroupEditorMemberStatus[]>([]);
   const [ actorFetchErrorSnackbarVisible, setActorFetchErrorSnackbarVisible ] = useState<boolean>(false);
   const [ actorFetchError, setActorFetchError ] = useState<string>('');
   const [ actorAddedSnackbarVisible, setActorAddedSnackbarVisible ] = useState<boolean>(false);
 
   useEffect(() => {
     setGroupName(props.group.name);
-    const initialActorStatuses: GroupEditorActorStatus[] = props.group.actorIds.map(actorId => 
-      ({ actorId: actorId, actor: props.currentActors.get(actorId), status: 'unchanged'})
+    const initialMemberStatuses: GroupEditorMemberStatus[] = props.group.memberIds.map(memberId => 
+      ({ memberId: memberId, actor: props.currentMembers.get(memberId), status: 'unchanged'})
     );
-    setActors(initialActorStatuses);
-  }, [props.group, props.currentActors]);
+    setMemberStatuses(initialMemberStatuses);
+  }, [props.group, props.currentMembers]);
 
-  const addActorHandler = (actorId: ActorId) => {
-    setActors(actors.map(a => {
+  const addMemberHandler = (actorId: ActorId) => {
+    setMemberStatuses(memberStatuses.map(ms => {
       const diff: any = {};
-      if (a.actorId.equals(actorId)) {
-        if (a.status === 'removed') {
+      if (ms.memberId.equals(actorId)) {
+        if (ms.status === 'removed') {
           diff.status = 'unchanged';
         } else {
           diff.status = 'added';
         }
       }
-      return { ...a, ...diff };
+      return { ...ms, ...diff };
     }));
   };
 
-  const removeActorHandler = (actorId: ActorId) => {
-    setActors(actors.map(a => {
+  const removeMemberHandler = (memberId: ActorId) => {
+    setMemberStatuses(memberStatuses.map(ms => {
       const diff: any = {};
-      if (a.actorId.equals(actorId)) {
-        if (a.status === 'unchanged') {
+      if (ms.memberId.equals(memberId)) {
+        if (ms.status === 'unchanged') {
           diff.status = 'removed';
         } else {
           return undefined;
         }
       }
-      return { ...a, ...diff };
-    }).filter(a => a !== undefined));
+      return { ...ms, ...diff };
+    }).filter(ms => ms !== undefined));
   }
 
-  const addNewActorHandler = async () => {
+  const addNewMemberHandler = async () => {
     try {
       const trimmedHandle = handle.trim();
       if (trimmedHandle === '') {
@@ -341,12 +341,12 @@ function GroupEditorView(props: GroupEditorViewProps) {
         setActorFetchError('Actor not found');
         setActorAddedSnackbarVisible(false);
         setActorFetchErrorSnackbarVisible(true);
-      } else if (actors.some(a => a.actorId.equals(actor.id))) {
+      } else if (memberStatuses.some(ms => ms.memberId.equals(actor.id))) {
         setActorFetchError('Actor already added');
         setActorAddedSnackbarVisible(false);
         setActorFetchErrorSnackbarVisible(true);
       } else {
-        setActors([...actors, {actorId: actor.id, actor: actor, status: 'added'}]);
+        setMemberStatuses([...memberStatuses, {memberId: actor.id, actor: actor, status: 'added'}]);
         setActorFetchErrorSnackbarVisible(false);
         setActorAddedSnackbarVisible(true);
         setHandle('');
@@ -359,67 +359,67 @@ function GroupEditorView(props: GroupEditorViewProps) {
     }
   };
 
-  const addActorFromNeighborsHandler = async (actorId: ActorId) => {
+  const addMemberFromNeighborsHandler = async (actorId: ActorId) => {
     const actor = await getActorRepository().get(actorId);
     if (actor === undefined) {
       return;
     }
-    if (actors.some(a => a.actorId.equals(actor.id))) {
+    if (memberStatuses.some(ms => ms.memberId.equals(actor.id))) {
       return;
     }
-    setActors([...actors, {actorId: actor.id, actor: actor, status: 'added'}]);
+    setMemberStatuses([...memberStatuses, {memberId: actor.id, actor: actor, status: 'added'}]);
   }
 
   const updateGroupHandler = async () => {
-    const actorIds = actors.filter(a => a.status !== 'removed').map(a => a.actorId);
+    const memberIds = memberStatuses.filter(ms => ms.status !== 'removed').map(ms => ms.memberId);
     const updatedGroup = {
       id: props.group.id,
       name: groupName,
-      actorIds: actorIds,
+      memberIds: memberIds,
     };
     await updateGroup(updatedGroup, [allGroups, setAllGroups]);
     props.updateGroupHandler();
   };
 
-  const createActorView = (actorStatus: GroupEditorActorStatus) => {
+  const createActorView = (memberStatus: GroupEditorMemberStatus) => {
     return (<View
-      key={actorStatus.actorId.toString()}
-      style={actorStatus.status === 'removed' ? groupEditorStyles.removedActorView : groupEditorStyles.actorView}
+      key={memberStatus.memberId.toString()}
+      style={memberStatus.status === 'removed' ? groupEditorStyles.removedActorView : groupEditorStyles.actorView}
     >
-      { actorStatus.actor !== undefined &&
-        <Pressable style={groupEditorStyles.actorPressable} onPress={() => linkHandler(actorStatus.actor!.uri)}>
-          { actorStatus.actor?.icon &&
+      { memberStatus.actor !== undefined &&
+        <Pressable style={groupEditorStyles.actorPressable} onPress={() => linkHandler(memberStatus.actor!.uri)}>
+          { memberStatus.actor?.icon &&
             <View>
-              <Avatar.Image source={{uri: actorStatus.actor.icon}} size={48}/>
+              <Avatar.Image source={{uri: memberStatus.actor.icon}} size={48}/>
             </View>
           }
           <View style={groupEditorStyles.actorNameView}>
-            <Text>{actorStatus.actor.name} ({actorStatus.actor.handle})</Text>
+            <Text>{memberStatus.actor.name} ({memberStatus.actor.handle})</Text>
           </View>
         </Pressable>
       }
-      { actorStatus.actor === undefined &&
+      { memberStatus.actor === undefined &&
         <View style={groupEditorStyles.actorIdView}>
-          <Text>{actorStatus.actorId.value}</Text>
+          <Text>{memberStatus.memberId.value}</Text>
         </View>
       }
       <View style={groupEditorStyles.actorStatusView}>
-        <Text variant="labelSmall">{actorStatus.status === 'unchanged' ? '' : actorStatus.status}</Text>
+        <Text variant="labelSmall">{memberStatus.status === 'unchanged' ? '' : memberStatus.status}</Text>
       </View>
-      { actorStatus.status === 'removed' &&
+      { memberStatus.status === 'removed' &&
         <View style={groupEditorStyles.actorButtonView}>
-          <Button style={groupEditorStyles.actorButton} onPress={() => addActorHandler(actorStatus.actorId)}>Add</Button>
+          <Button style={groupEditorStyles.actorButton} onPress={() => addMemberHandler(memberStatus.memberId)}>Add</Button>
         </View>
       }
-      { actorStatus.status !== 'removed' &&
+      { memberStatus.status !== 'removed' &&
         <View style={groupEditorStyles.actorButtonView}>
-          <Button style={groupEditorStyles.actorButton} onPress={() => removeActorHandler(actorStatus.actorId)}>Remove</Button>
+          <Button style={groupEditorStyles.actorButton} onPress={() => removeMemberHandler(memberStatus.memberId)}>Remove</Button>
         </View>
       }
     </View>);
   };
-  const activityPubActorViews = actors.filter(a => a.actorId.snsType === SNSTypes.ActivityPub).map(createActorView);
-  const atProtoActorViews = actors.filter(a => a.actorId.snsType === SNSTypes.ATProto).map(createActorView);
+  const activityPubActorViews = memberStatuses.filter(ms => ms.memberId.snsType === SNSTypes.ActivityPub).map(createActorView);
+  const atProtoActorViews = memberStatuses.filter(ms => ms.memberId.snsType === SNSTypes.ATProto).map(createActorView);
   
   const createNeighborView = (actorId: ActorId, actor: Actor|undefined) => (
     <View key={actorId.toString()} style={groupEditorStyles.actorView}>
@@ -441,7 +441,7 @@ function GroupEditorView(props: GroupEditorViewProps) {
         </View>
       }
       <View style={groupEditorStyles.actorButtonView}>
-        <Button style={groupEditorStyles.actorButton} onPress={() => addActorFromNeighborsHandler(actorId)}>Add</Button>
+        <Button style={groupEditorStyles.actorButton} onPress={() => addMemberFromNeighborsHandler(actorId)}>Add</Button>
       </View>
     </View>
   );
@@ -474,7 +474,7 @@ function GroupEditorView(props: GroupEditorViewProps) {
         placeholder="Enter a handle"
         autoCapitalize='none'
       />
-      <Button mode="contained" onPress={addNewActorHandler} style={groupEditorStyles.addButton}>Add</Button>
+      <Button mode="contained" onPress={addNewMemberHandler} style={groupEditorStyles.addButton}>Add</Button>
       { activityPubActorViews.length > 0 && (
         <View style={groupEditorStyles.actorListView}>
           <Text variant="titleSmall" style={groupEditorStyles.actorListViewHeader}>ActivityPub</Text>

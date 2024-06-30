@@ -388,26 +388,26 @@ export function deserializeGroupId(s: string): GroupId|undefined {
 export interface Group {
   id: GroupId;
   name: string;
-  actorIds: ActorId[];
+  memberIds: ActorId[];
 }
 
 function groupToSerializableObject(group: Group): any {
   return {
     id: groupIdToSerializableObject(group.id),
     name: group.name,
-    actorIds: group.actorIds.map(actorIdToSerializableObject),
+    memberIds: group.memberIds.map(actorIdToSerializableObject),
   };
 }
 
 function serializableObjectToGroup(obj: any): Group|undefined {
-  if (obj && obj.id && obj.name && obj.actorIds) {
+  if (obj && obj.id && obj.name && obj.memberIds) {
     const id = serializableObjectToGroupId(obj.id);
     if (id) {
-      const actorIds = obj.actorIds.map(serializableObjectToActorId).filter((id: any) => id !== undefined) as ActorId[];
+      const memberIds = obj.memberIds.map(serializableObjectToActorId).filter((id: any) => id !== undefined) as ActorId[];
       return {
         id,
         name: obj.name,
-        actorIds,
+        memberIds,
       };
     }
   }

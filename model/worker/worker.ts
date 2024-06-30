@@ -104,10 +104,10 @@ class NeighborCrawlStartWorker {
     }
 
     if (await this.isTimeToStartCrawl(group)) {
-      const activityPubActorIds = group.actorIds.filter((aid) => aid.snsType === SNSTypes.ActivityPub);
-      const atProtoActorIds = group.actorIds.filter((aid) => aid.snsType === SNSTypes.ATProto);
-      const activityPubDataSet = activityPubActorIds.length === 0 ? undefined : await this.createInitialDataSet(activityPubActorIds, statusRepository.getActivityPubFollowsFetchQueue());
-      const atProtoDataSet = atProtoActorIds.length === 0 ? undefined : await this.createInitialDataSet(atProtoActorIds, statusRepository.getAtProtoFollowsFetchQueue());
+      const activityPubMemberIds = group.memberIds.filter((mid) => mid.snsType === SNSTypes.ActivityPub);
+      const atProtoMemberIds = group.memberIds.filter((mid) => mid.snsType === SNSTypes.ATProto);
+      const activityPubDataSet = activityPubMemberIds.length === 0 ? undefined : await this.createInitialDataSet(activityPubMemberIds, statusRepository.getActivityPubFollowsFetchQueue());
+      const atProtoDataSet = atProtoMemberIds.length === 0 ? undefined : await this.createInitialDataSet(atProtoMemberIds, statusRepository.getAtProtoFollowsFetchQueue());
       const newStatus = {
         groupId: group.id,
         startedAt: new Date(),
@@ -123,20 +123,20 @@ class NeighborCrawlStartWorker {
     const resultRepository = await getNeighborCrawlResultRepository();
     const lastResult = await resultRepository.get(group.id);
     return lastResult === undefined ||
-      !equalsAsSet(lastResult.groupActorIds.map((gid) => gid.toString()), group.actorIds.map((gid) => gid.toString())) ||
+      !equalsAsSet(lastResult.groupMemberIds.map((mid) => mid.toString()), group.memberIds.map((mid) => mid.toString())) ||
       (lastResult.isSucceeded && lastResult.finishedAt.getTime() < getEpochSeconds() - NeighborCrawlStartWorker.successIntervalHours * 3600) ||
       (!lastResult.isSucceeded && lastResult.finishedAt.getTime() < getEpochSeconds() - NeighborCrawlStartWorker.errorIntervalHours * 3600);
   }
 
-  private async createInitialDataSet(actorIds: ActorId[], followsFetchQueue: NeighborCrawlFollowsFetchQueue): Promise<NeighborCrawlDataSet> {
+  private async createInitialDataSet(memberIds: ActorId[], followsFetchQueue: NeighborCrawlFollowsFetchQueue): Promise<NeighborCrawlDataSet> {
     const dataSet = {
-      groupActorIds: new SerializableValueSet(actorIds),
+      groupMemberIds: new SerializableValueSet(memberIds),
       closeNeighborIds: new SerializableValueSet<ActorId>(),
       errorActorIds: new SerializableValueSet<ActorId>(),
       followCounts: new SerializableKeyMap<ActorId, { countByMember: number, countByNeighbor: number }>(),
     };
-    for (const actorId of actorIds) {
-      await checkFollowsAndEnqueueFetchParamsIfNecessary(actorId, true, dataSet, followsFetchQueue);
+    for (const memberId of memberIds) {
+      await checkFollowsAndEnqueueFetchParamsIfNecessary(memberId, true, dataSet, followsFetchQueue);
     }
     return dataSet;
   }
@@ -252,7 +252,7 @@ class NeighborCrawlWorker {
       if (followsFetchResult.isError) {
         followsFetchBuffer.delete(followsFetchParams.actorId);
         dataSet.errorActorIds.add(followsFetchParams.actorId);
-        if (dataSet.errorActorIds.size > (dataSet.groupActorIds.size + dataSet.closeNeighborIds.size) / 2) {
+        if (dataSet.errorActorIds.size > (dataSet.groupMemberIds.size + dataSet.closeNeighborIds.size) / 2) {
           await this.finalizeCrawlByError(status);
         }
       } else if (followsFetchResult.allFollowsAvailable) {
@@ -260,7 +260,7 @@ class NeighborCrawlWorker {
         if (followedIds !== undefined) {
           const followsRepository = await getFollowsRepository();
           await followsRepository.store(followsFetchParams.actorId, followedIds.map((aid) => aid.value));
-          addFollowCounts(dataSet.followCounts, dataSet.groupActorIds.has(followsFetchParams.actorId), followedIds);
+          addFollowCounts(dataSet.followCounts, dataSet.groupMemberIds.has(followsFetchParams.actorId), followedIds);
         }
       } else {
         if (followsFetchResult.nextParams !== undefined) {
@@ -272,7 +272,7 @@ class NeighborCrawlWorker {
   }
 
   private hasEnoughActors(dataSet: NeighborCrawlDataSet): boolean {
-    return dataSet.groupActorIds.size + dataSet.closeNeighborIds.size - dataSet.errorActorIds.size >= NeighborCrawlWorker.enoughActorsThreshold;
+    return dataSet.groupMemberIds.size + dataSet.closeNeighborIds.size - dataSet.errorActorIds.size >= NeighborCrawlWorker.enoughActorsThreshold;
   }
     
 
@@ -366,9 +366,9 @@ class NeighborCrawlWorker {
     this.sortFollowCounts(followCounts);
     for (const fc of followCounts) {
       const actorId = fc[0];
-      if (!dataSet.groupActorIds.has(actorId) && !dataSet.closeNeighborIds.has(actorId) && !dataSet.errorActorIds.has(actorId)) {
+      if (!dataSet.groupMemberIds.has(actorId) && !dataSet.closeNeighborIds.has(actorId) && !dataSet.errorActorIds.has(actorId)) {
         dataSet.closeNeighborIds.add(actorId);
-        await checkFollowsAndEnqueueFetchParamsIfNecessary(actorId, dataSet.groupActorIds.has(actorId), dataSet, followsFetchQueue);
+        await checkFollowsAndEnqueueFetchParamsIfNecessary(actorId, dataSet.groupMemberIds.has(actorId), dataSet, followsFetchQueue);
         return true;
       }
     }
@@ -391,8 +391,8 @@ class NeighborCrawlWorker {
     const statusRepository = getNeighborCrawlStatusRepository();
     const activityPubDataSet = statusRepository.getActivityPubDataSet();
     const atProtoDataSet = statusRepository.getAtProtoDataSet();
-    const activityPubMemberCount = activityPubDataSet?.groupActorIds.size || 0;
-    const atProtoMemberCount = atProtoDataSet?.groupActorIds.size || 0;
+    const activityPubMemberCount = activityPubDataSet?.groupMemberIds.size || 0;
+    const atProtoMemberCount = atProtoDataSet?.groupMemberIds.size || 0;
     const memberCount = activityPubMemberCount + atProtoMemberCount;
     const activityPubNeighborsLimit = memberCount === 0 ? 0 : NeighborCrawlWorker.maxNeighbors * (activityPubMemberCount / memberCount);
     const atProtoNeighborsLimit = memberCount === 0 ? 0 : NeighborCrawlWorker.maxNeighbors * (atProtoMemberCount / memberCount);
@@ -400,22 +400,22 @@ class NeighborCrawlWorker {
     const atProtoNeighbors = atProtoDataSet === undefined ? [] : this.selectNeighbors(atProtoDataSet, atProtoNeighborsLimit);
 
     const neighborsRepository = await getNeighborsRepository();
-    neighborsRepository.store(status.groupId, { groupId: status.groupId, activityPubNeighbors, atProtoNeighbors });
+    neighborsRepository.store({ groupId: status.groupId, activityPubNeighbors, atProtoNeighbors });
 
     const resultRepository = await getNeighborCrawlResultRepository();
-    const groupActorIds: ActorId[] = [];
+    const groupMemberIds: ActorId[] = [];
     if (activityPubDataSet !== undefined) {
-      groupActorIds.push(...Array.from(activityPubDataSet.groupActorIds.values()));
+      groupMemberIds.push(...Array.from(activityPubDataSet.groupMemberIds.values()));
     }
     if (atProtoDataSet !== undefined) {
-      groupActorIds.push(...Array.from(atProtoDataSet.groupActorIds.values()));
+      groupMemberIds.push(...Array.from(atProtoDataSet.groupMemberIds.values()));
     }
     resultRepository.store({
       groupId: status.groupId,
       isSucceeded: true,
       startedAt: status.startedAt,
       finishedAt: new Date(),
-      groupActorIds,
+      groupMemberIds,
     });
     getNeighborCrawlStatusRepository().delete();
     this.setCurrentNeighborCrawlStatus(undefined);
@@ -425,7 +425,7 @@ class NeighborCrawlWorker {
   private selectNeighbors(dataSet: NeighborCrawlDataSet, limit: number): Neighbor[] {
     const neighbors: Neighbor[] = Array.from(dataSet.followCounts.entries()).map((fc) => {
       const actorId: ActorId = fc[0];
-      if (dataSet.groupActorIds.has(actorId) || fc[1].countByMember + fc[1].countByNeighbor <= NeighborCrawlWorker.neighborFollowCountThreshold) {
+      if (dataSet.groupMemberIds.has(actorId) || fc[1].countByMember + fc[1].countByNeighbor <= NeighborCrawlWorker.neighborFollowCountThreshold) {
         return undefined;
       }
       const score = fc[1].countByMember * 2 + fc[1].countByNeighbor;
@@ -440,19 +440,19 @@ class NeighborCrawlWorker {
     const activityPubDataSet = statusRepository.getActivityPubDataSet();
     const atProtoDataSet = statusRepository.getAtProtoDataSet();
     const resultRepository = await getNeighborCrawlResultRepository();
-    const groupActorIds: ActorId[] = [];
+    const groupMemberIds: ActorId[] = [];
     if (activityPubDataSet !== undefined) {
-      groupActorIds.push(...Array.from(activityPubDataSet.groupActorIds.values()));
+      groupMemberIds.push(...Array.from(activityPubDataSet.groupMemberIds.values()));
     }
     if (atProtoDataSet !== undefined) {
-      groupActorIds.push(...Array.from(atProtoDataSet.groupActorIds.values()));
+      groupMemberIds.push(...Array.from(atProtoDataSet.groupMemberIds.values()));
     }
     resultRepository.store({
       groupId: status.groupId,
       isSucceeded: false,
       startedAt: status.startedAt,
       finishedAt: new Date(),
-      groupActorIds,
+      groupMemberIds,
     });
     getNeighborCrawlStatusRepository().delete();
     this.setCurrentNeighborCrawlStatus(undefined);
@@ -487,7 +487,7 @@ class FeedFetchEnqueueWorker {
         ...neighbors?.atProtoNeighbors?.map((n) => n.actorId) ?? [],
         ...neighbors?.activityPubNeighbors?.map((n) => n.actorId) ?? [],
       ];
-      return { groupId: group.id, memberIds: group.actorIds, neighborIds: neighborIds };
+      return { groupId: group.id, memberIds: group.memberIds, neighborIds: neighborIds };
     }
 
     async function enqueueNewActors(actorIds: ActorId[], successIntervalMillis: number, errorIntervalMillis: number) {

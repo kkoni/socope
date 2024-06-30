@@ -14,7 +14,7 @@ export interface NeighborCrawlStatus {
 }
 
 export interface NeighborCrawlDataSet {
-  groupActorIds: SerializableValueSet<ActorId>;
+  groupMemberIds: SerializableValueSet<ActorId>;
   closeNeighborIds: SerializableValueSet<ActorId>;
   errorActorIds: SerializableValueSet<ActorId>;
   followCounts: SerializableKeyMap<ActorId, { countByMember: number, countByNeighbor: number }>;
@@ -30,7 +30,7 @@ export interface NeighborCrawlResult {
   groupId: GroupId,
   startedAt: Date,
   finishedAt: Date,
-  groupActorIds: ActorId[],
+  groupMemberIds: ActorId[],
   isSucceeded: boolean,
   error?: string
 }
@@ -40,21 +40,21 @@ function neighborCrawlResultToSerializableObject(result: NeighborCrawlResult): a
     groupId: serializeGroupId(result.groupId),
     startedAt: result.startedAt.getTime(),
     finishedAt: result.finishedAt.getTime(),
-    groupActorIds: result.groupActorIds.map(serializeActorId),
+    groupMemberIds: result.groupMemberIds.map(serializeActorId),
     isSucceeded: result.isSucceeded,
     error: result.error,
   };
 }
 
 function serializableObjectToNeighborCrawlResult(obj: any): NeighborCrawlResult|undefined {
-  if (obj && obj.groupId && obj.startedAt && obj.groupActorIds && obj.finishedAt && obj.isSucceeded) {
+  if (obj && obj.groupId && obj.startedAt && obj.groupMemberIds && obj.finishedAt && obj.isSucceeded) {
     const groupId = deserializeGroupId(obj.groupId);
     if (groupId) {
       return {
         groupId,
         startedAt: new Date(obj.startedAt),
         finishedAt: new Date(obj.finishedAt),
-        groupActorIds: obj.groupActorIds.map(deserializeActorId),
+        groupMemberIds: obj.groupMemberIds.map(deserializeActorId),
         isSucceeded: obj.isSucceeded,
         error: obj.error,
       };
