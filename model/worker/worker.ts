@@ -466,7 +466,7 @@ const neighborSuccessFeedFetchIntervalMillis = 60 * 60 * 1000;
 const neighborErrorFeedFetchIntervalMillis = 6 * 60 * 60 * 1000;
 
 class FeedFetchEnqueueWorker {
-  private static intervalMillis = 10000;
+  private static intervalMillis = 60000;
 
   private clearInterval: any|undefined;
 
@@ -572,7 +572,7 @@ class FeedFetchWorker {
       const feedRepository = getATProtoFeedRepository();
   
       async function fetchPosts(limit: number, cursor?: string): Promise<{posts: Post[], cursor?: string}> {
-        const result = await feedRepository.fetchAuthorFeed(actorId, limit, cursor);
+        const result = await feedRepository.fetchAuthorFeed(actorId, limit, isMember, cursor);
         const newPosts = result.posts.filter((post) => {
           return post.createdAt !== undefined && (previousResult?.mostRecentlyPostedAt === undefined || previousResult.mostRecentlyPostedAt.getTime() < post.createdAt.getTime());
         });
@@ -660,8 +660,6 @@ class FeedFetchWorker {
     }
     feedFetchQueue.enqueue(actorId, new Date(Date.now() + intervalMillis));
   }
-
-
 }
 
 class PostIndexFlushWorker {

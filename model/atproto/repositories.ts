@@ -209,7 +209,7 @@ export class FeedRepository {
     this.postRepository = postRepository;
   }
 
-  async fetchAuthorFeed(actorId: ActorId, limit: number, cursor?: string): Promise<{posts: Post[], reposts: Repost[], cursor?: string}> {
+  async fetchAuthorFeed(actorId: ActorId, limit: number, caching: boolean, cursor?: string): Promise<{posts: Post[], reposts: Repost[], cursor?: string}> {
     const fetchedFeed = await this.client.fetchAuthorFeed(actorId.value, limit, cursor);
     const posts: Post[] = [];
     const reposts: Repost[] = [];
@@ -217,7 +217,9 @@ export class FeedRepository {
       const postOrRepost = createPostOrRepostFromFeedViewPost(feedViewPost);
       if (postOrRepost.post !== undefined) {
         posts.push(postOrRepost.post);
-        this.postRepository.storeToCache(postOrRepost.post);
+        if (caching) {
+          this.postRepository.storeToCache(postOrRepost.post);
+        }
       } else if (postOrRepost.repost !== undefined) {
         reposts.push(postOrRepost.repost);
       }
