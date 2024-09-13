@@ -5,7 +5,7 @@ import { Avatar, Button, Portal, Snackbar, Text, TextInput } from 'react-native-
 import { useNavigation } from '@react-navigation/native';
 import { allGroupsState, jumpedGroupIdState } from '../states';
 import { createGroup } from '../facades';
-import { Actor, ActorId, SNSTypes } from '../model/data';
+import { Actor, ActorId } from '../model/data';
 import { getActorRepository, getGroupRepository } from '../model/repositories';
 
 export default function CreateGroupScreen() {
@@ -82,8 +82,7 @@ export default function CreateGroupScreen() {
     </View>
   );
 
-  const activityPubActorViews = actorsToAdd.filter(a => a.id.snsType === SNSTypes.ActivityPub).map(createActorView);
-  const atProtoActorViews = actorsToAdd.filter(a => a.id.snsType === SNSTypes.ATProto).map(createActorView);
+  const actorViews = actorsToAdd.map(createActorView);
 
   return (
     <View>
@@ -95,8 +94,7 @@ export default function CreateGroupScreen() {
         autoCapitalize='none'
       />
       <Text>
-        Specify some ActivityPub(Mastodon etc.) or ATProto(BlueSky) users you want to follow up.
-        (e.g. xxx@mastodon.social for ActivityPub or xxx.bsky.social for ATProto)
+        Specify some Bluesky users you want to follow up.
       </Text>
       <TextInput
         value={handle}
@@ -105,16 +103,9 @@ export default function CreateGroupScreen() {
         autoCapitalize='none'
       />
       <Button mode="contained" onPress={addActorHandler} style={styles.addButton}>Add</Button>
-      { activityPubActorViews.length > 0 && (
+      { actorViews.length > 0 && (
         <View style={styles.actorListView}>
-          <Text variant="titleSmall" style={styles.actorListViewHeader}>ActivityPub</Text>
-          { activityPubActorViews }
-        </View>
-      )}
-      { atProtoActorViews.length > 0 && (
-        <View style={styles.actorListView}>
-          <Text variant="titleSmall" style={styles.actorListViewHeader}>ATProto</Text>
-          { atProtoActorViews }
+          { actorViews }
         </View>
       )}
       { actorsToAdd.length > 0 && <Button mode="contained" onPress={createGroupHandler}>Create Group</Button> }
