@@ -100,13 +100,23 @@ class NeighborCrawlStartWorker {
     }
 
     if (await this.isTimeToStartCrawl(group)) {
-      const dataSet = group.memberIds.length === 0 ? undefined : await this.createInitialDataSet(group.memberIds, statusRepository.getFollowsFetchQueue());
+      const dataSet = group.memberIds.length === 0 ? undefined : {
+        groupMemberIds: new SerializableValueSet(group.memberIds),
+        closeNeighborIds: new SerializableValueSet<ActorId>(),
+        errorActorIds: new SerializableValueSet<ActorId>(),
+        followCounts: new SerializableKeyMap<ActorId, { countByMember: number, countByNeighbor: number }>(),
+      };
       const newStatus = {
         groupId: group.id,
         startedAt: new Date(),
         fetchFinished: { activityPub: 0, atProto: 0 },
       };
       statusRepository.initializeCrawl(newStatus, dataSet);
+      if (dataSet !== undefined) {
+        for (const memberId of group.memberIds) {
+          await checkFollowsAndEnqueueFetchParamsIfNecessary(memberId, true, dataSet, statusRepository.getFollowsFetchQueue());
+        }
+      }
       this.setCurrentNeighborCrawlStatus(newStatus);
       console.log('Start NeighborCrawlWorker for group ' + group.id.toString());
     }
@@ -119,19 +129,6 @@ class NeighborCrawlStartWorker {
       !equalsAsSet(lastResult.groupMemberIds.map((mid) => mid.toString()), group.memberIds.map((mid) => mid.toString())) ||
       (lastResult.isSucceeded && lastResult.finishedAt.getTime() < getEpochSeconds() - NeighborCrawlStartWorker.successIntervalHours * 3600) ||
       (!lastResult.isSucceeded && lastResult.finishedAt.getTime() < getEpochSeconds() - NeighborCrawlStartWorker.errorIntervalHours * 3600);
-  }
-
-  private async createInitialDataSet(memberIds: ActorId[], followsFetchQueue: NeighborCrawlFollowsFetchQueue): Promise<NeighborCrawlDataSet> {
-    const dataSet = {
-      groupMemberIds: new SerializableValueSet(memberIds),
-      closeNeighborIds: new SerializableValueSet<ActorId>(),
-      errorActorIds: new SerializableValueSet<ActorId>(),
-      followCounts: new SerializableKeyMap<ActorId, { countByMember: number, countByNeighbor: number }>(),
-    };
-    for (const memberId of memberIds) {
-      await checkFollowsAndEnqueueFetchParamsIfNecessary(memberId, true, dataSet, followsFetchQueue);
-    }
-    return dataSet;
   }
 }
 
@@ -404,6 +401,7 @@ class FeedFetchEnqueueWorker {
       for (const actorId of actorIds) {
         if (!feedFetchQueue.has(actorId)) {
           const previousResult = await feedFetchResultRepository.get(actorId);
+          console.log('actorId=' + actorId + ' previousResult=' + JSON.stringify(previousResult));
           if (previousResult === undefined) {
             feedFetchQueue.enqueue(actorId, new Date());
           } else if (previousResult.isSucceeded) {
@@ -425,7 +423,7 @@ class FeedFetchEnqueueWorker {
       }
       groupActorMapping.setGroupActors(groupActorsArray);
       enqueueNewActors(groupActorMapping.getAllMemberIds(), memberSuccessFeedFetchIntervalMillis, memberErrorFeedFetchIntervalMillis);
-      enqueueNewActors(groupActorMapping.getAllNeighborIds(), neighborSuccessFeedFetchIntervalMillis, neighborErrorFeedFetchIntervalMillis);
+      //enqueueNewActors(groupActorMapping.getAllNeighborIds(), neighborSuccessFeedFetchIntervalMillis, neighborErrorFeedFetchIntervalMillis);
     } catch(e) {
       console.error('FeedFetchWorker error', e);
     }

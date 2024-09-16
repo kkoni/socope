@@ -1,23 +1,6 @@
 import deepEqual from 'deep-equal';
 import { Serializable } from './lib/util';
 
-export const SNSTypes = {
-  ActivityPub: "ActivityPub",
-  ATProto: "ATProto",
-} as const;
-
-export type SNSType = typeof SNSTypes[keyof typeof SNSTypes];
-
-export function parseSNSType(s: string): SNSType|undefined {
-  switch (s) {
-    case SNSTypes.ActivityPub:
-    case SNSTypes.ATProto:
-      return s;
-    default:
-      return undefined;
-  }
-}
-
 export class ActorId implements Serializable {
   value: string;
 
