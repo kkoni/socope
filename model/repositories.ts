@@ -1,6 +1,4 @@
 import { AppBskyActorDefs } from '@atproto/api';
-import { Actor as ActivityPubActor, getHandle, handleToAcctUri } from './activity-pub/data';
-import { getActorRepository as getActivityPubActorRepository } from './activity-pub/repositories';
 import {
   getActorRepository as getATProtoActorRepository,
   getPostRepository as getATProtoPostRepository,
@@ -15,12 +13,12 @@ import {
   Neighbors,
   Post,
   PostId,
-  SNSType,
-  SNSTypes,
   serializeGroup,
   deserializeGroup,
   serializeNeighbors,
   deserializeNeighbors,
+  serializeActorId,
+  deserializeActorId,
 } from './data';
 
 interface Singletons {
@@ -73,52 +71,20 @@ export function getPostRepository(): PostRepository {
   return singletons.postRepository;
 }
 
-const activityPubHandleRegex = /^[^@]+@[^@]+$/
-
 export class ActorRepository {
   async fetchByHandle(handle: string): Promise<Actor|undefined> {
-    let snsType: SNSType = SNSTypes.ATProto;
-    if (handle.match(activityPubHandleRegex)) {
-      snsType = SNSTypes.ActivityPub;
-    }
-    switch (snsType) {
-      case SNSTypes.ActivityPub:
-        const acctUri = handleToAcctUri(handle);
-        if (acctUri === undefined) {
-          return undefined;
-        }
-        const activityPubActor = await (await getActivityPubActorRepository()).fetchByAcctUri(acctUri);
-        return activityPubActor ? this.convertActivityPubActor(activityPubActor) : undefined;
-      case SNSTypes.ATProto:
-        const atProtoActor = await (await getATProtoActorRepository()).fetch(handle);
-        return atProtoActor ? this.convertATProtoActor(atProtoActor) : undefined;
-    }
+    const atProtoActor = await (await getATProtoActorRepository()).fetch(handle);
+    return atProtoActor ? this.convertATProtoActor(atProtoActor) : undefined;
   }
 
   async get(id: ActorId): Promise<Actor|undefined> {
-    switch (id.snsType) {
-      case SNSTypes.ActivityPub:
-        const activityPubActor = await (await getActivityPubActorRepository()).get(id.value);
-        return activityPubActor ? this.convertActivityPubActor(activityPubActor) : undefined;
-      case SNSTypes.ATProto:
-        const atProtoActor = await (await getATProtoActorRepository()).get(id.value);
-        return atProtoActor ? this.convertATProtoActor(atProtoActor) : undefined;
-    }
-  }
-
-  private convertActivityPubActor(actor: ActivityPubActor): Actor {
-    return {
-      id: new ActorId(SNSTypes.ActivityPub, actor.id),
-      uri: actor.url,
-      name: actor.name,
-      handle: getHandle(actor),
-      icon: actor.icon,
-    };
+    const atProtoActor = await (await getATProtoActorRepository()).get(id.value);
+    return atProtoActor ? this.convertATProtoActor(atProtoActor) : undefined;
   }
 
   private convertATProtoActor(actor: AppBskyActorDefs.ProfileViewDetailed): Actor {
     return {
-      id: new ActorId(SNSTypes.ATProto, actor.did),
+      id: new ActorId(actor.did),
       uri: `https://bsky.app/profile/${actor.handle}`,
       name: actor.displayName || actor.handle,
       handle: actor.handle,
@@ -198,47 +164,33 @@ export class FollowsRepository {
     return JSON.parse(s);
   }
 
-  private storages: Map<SNSType, EphemeralDataStorage<string[]>>;
+  private storage: EphemeralDataStorage<string[]>;
 
   constructor(storageManager: StorageManager) {
-    this.storages = new Map();
-    for (const snsType of Object.values(SNSTypes)) {
-      this.storages.set(snsType, new EphemeralDataStorage(
-        `${FollowsRepository.storageKeyPrefix}.${snsType}`,
-        FollowsRepository.storageTTL,
-        storageManager,
-        FollowsRepository.serializer,
-        FollowsRepository.deserializer,
-      ));
-    }
+    this.storage = new EphemeralDataStorage(
+      FollowsRepository.storageKeyPrefix,
+      FollowsRepository.storageTTL,
+      storageManager,
+      FollowsRepository.serializer,
+      FollowsRepository.deserializer,
+    );
   }
 
   async get(actorId: ActorId): Promise<{followedIds: ActorId[], updatedAt: number}|undefined> {
-    const storage = this.storages.get(actorId.snsType);
-    if (storage === undefined) {
-      return undefined;
-    }
-    const stored = await storage.get(actorId.value);
+    const stored = await this.storage.get(actorId.value);
     if (stored === undefined) {
       return undefined;
     }
-    const followedIds = stored.value.map((v) => new ActorId(actorId.snsType, v));
+    const followedIds = stored.value.map(deserializeActorId);
     return {followedIds, updatedAt: stored.updatedAt};
   }
 
   async getUpdatedAt(actorId: ActorId): Promise<number | undefined> {
-    const storage = this.storages.get(actorId.snsType);
-    if (storage === undefined) {
-      return undefined;
-    }
-    return await storage.getUpdatedAt(actorId.value);
+    return await this.storage.getUpdatedAt(actorId.value);
   }
 
-  async store(actorId: ActorId, followedIds: string[]): Promise<void> {
-    const storage = this.storages.get(actorId.snsType);
-    if (storage !== undefined) {
-      await storage.store(actorId.value, followedIds, getEpochSeconds());
-    }
+  async store(actorId: ActorId, followedIds: ActorId[]): Promise<void> {
+    await this.storage.store(actorId.value, followedIds.map(serializeActorId), getEpochSeconds());
   }
 }
 
@@ -275,9 +227,8 @@ export class NeighborsRepository {
 
 export class PostRepository {
   async get(postIds: PostId[]): Promise<SerializableKeyMap<PostId, Post>> {
-    const atProtoPostIds = postIds.filter((postId) => postId.snsType === SNSTypes.ATProto);
     const result = new SerializableKeyMap<PostId, Post>();
-    for (const [postId, post] of (await getATProtoPostRepository().get(atProtoPostIds)).entries()) {
+    for (const [postId, post] of (await getATProtoPostRepository().get(postIds)).entries()) {
       result.set(postId, post);
     }
     return result;

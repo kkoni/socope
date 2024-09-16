@@ -1,4 +1,4 @@
-import { ActorId, PostId, SNSType, SNSTypes } from '../data';
+import { ActorId, PostId } from '../data';
 
 export interface PostIndex {
   postId: PostId;
@@ -16,7 +16,6 @@ export function deserializePostIndices(s: string): PostIndex[] {
 
 function postIndexToSerializableObject(index: PostIndex): any {
   return {
-    st: abbreviateSNSType(index.postId.snsType),
     pid: index.postId.value,
     pat: index.postedAt.getTime(),
     pby: index.postedBy.value,
@@ -24,31 +23,12 @@ function postIndexToSerializableObject(index: PostIndex): any {
 }
 
 function serializableObjectToPostIndex(obj: any): PostIndex|undefined {
-  if (obj && obj.st && obj.pid && obj.pat && obj.pby) {
-    const snsType = extendAbbreviatedSNSType(obj.st);
-    if (snsType) {
-      return {
-        postId: new PostId(snsType, obj.pid),
-        postedAt: new Date(obj.pat),
-        postedBy: new ActorId(snsType, obj.pby),
-      };
-    }
-  }
-  return undefined;
-}
-
-function abbreviateSNSType(snsType: SNSType): string {
-  switch (snsType) {
-    case SNSTypes.ActivityPub: return 'ap';
-    case SNSTypes.ATProto: return 'at';
-  }
-  return 'unknown';
-}
-
-function extendAbbreviatedSNSType(abbreviated: string): SNSType|undefined {
-  switch (abbreviated) {
-    case 'ap': return SNSTypes.ActivityPub;
-    case 'at': return SNSTypes.ATProto;
+  if (obj && obj.pid && obj.pat && obj.pby) {
+    return {
+      postId: new PostId(obj.pid),
+      postedAt: new Date(obj.pat),
+      postedBy: new ActorId(obj.pby),
+    };
   }
   return undefined;
 }

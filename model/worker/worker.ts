@@ -1,11 +1,7 @@
 import { SerializableKeyMap, SerializableValueSet, equalsAsSet, getEpochSeconds } from '../lib/util';
-import { ActorId, Group, Neighbor, Post, SNSTypes } from '../data';
+import { ActorId, Group, Neighbor, Post, deserializeActorId } from '../data';
 import { getGroupRepository, getFollowsRepository, getNeighborsRepository } from '../repositories';
 import { PostIndex } from '../posts/data';
-import {
-  getActorRepository as getActivityPubActorRepository,
-  getFollowingClient as getActivityPubFollowingClient,
-} from '../activity-pub/repositories';
 import {
   getFollowsClient as getATProtoFollowsClient,
   getFeedRepository as getATProtoFeedRepository,
@@ -104,16 +100,13 @@ class NeighborCrawlStartWorker {
     }
 
     if (await this.isTimeToStartCrawl(group)) {
-      const activityPubMemberIds = group.memberIds.filter((mid) => mid.snsType === SNSTypes.ActivityPub);
-      const atProtoMemberIds = group.memberIds.filter((mid) => mid.snsType === SNSTypes.ATProto);
-      const activityPubDataSet = activityPubMemberIds.length === 0 ? undefined : await this.createInitialDataSet(activityPubMemberIds, statusRepository.getActivityPubFollowsFetchQueue());
-      const atProtoDataSet = atProtoMemberIds.length === 0 ? undefined : await this.createInitialDataSet(atProtoMemberIds, statusRepository.getAtProtoFollowsFetchQueue());
+      const dataSet = group.memberIds.length === 0 ? undefined : await this.createInitialDataSet(group.memberIds, statusRepository.getFollowsFetchQueue());
       const newStatus = {
         groupId: group.id,
         startedAt: new Date(),
         fetchFinished: { activityPub: 0, atProto: 0 },
       };
-      statusRepository.initializeCrawl(newStatus, activityPubDataSet, atProtoDataSet);
+      statusRepository.initializeCrawl(newStatus, dataSet);
       this.setCurrentNeighborCrawlStatus(newStatus);
       console.log('Start NeighborCrawlWorker for group ' + group.id.toString());
     }
@@ -220,16 +213,11 @@ class NeighborCrawlWorker {
       return;
     }
     while (Date.now() - start < NeighborCrawlWorker.intervalMillis - 500) {
-      const activityPubDataSet = statusRepository.getActivityPubDataSet();
-      const atProtoDataSet = statusRepository.getAtProtoDataSet();
-      if (activityPubDataSet !== undefined && !statusRepository.isActivityPubFetchFinished()) {
-        if (await this.fetchNext(status, activityPubDataSet, statusRepository.getActivityPubFollowsFetchQueue())) {
-          statusRepository.setActivityPubFetchFinished();
-        }
-      } else if (atProtoDataSet !== undefined && !statusRepository.isAtProtoFetchFinished()) {
-        const ret = await this.fetchNext(status, atProtoDataSet, statusRepository.getAtProtoFollowsFetchQueue());
+      const dataSet = statusRepository.getDataSet();
+      if (dataSet !== undefined && !statusRepository.isFetchFinished()) {
+        const ret = await this.fetchNext(status, dataSet, statusRepository.getFollowsFetchQueue());
         if (ret) {
-          statusRepository.setAtProtoFetchFinished();
+          statusRepository.setFetchFinished();
         }
       } else {
         await this.finalizeCrawl(status);
@@ -259,7 +247,7 @@ class NeighborCrawlWorker {
         const followedIds = followsFetchBuffer.get(followsFetchParams.actorId);
         if (followedIds !== undefined) {
           const followsRepository = await getFollowsRepository();
-          await followsRepository.store(followsFetchParams.actorId, followedIds.map((aid) => aid.value));
+          await followsRepository.store(followsFetchParams.actorId, followedIds);
           addFollowCounts(dataSet.followCounts, dataSet.groupMemberIds.has(followsFetchParams.actorId), followedIds);
         }
       } else {
@@ -280,70 +268,13 @@ class NeighborCrawlWorker {
     params: NeighborCrawlFollowsFetchParams,
     dataSet: NeighborCrawlDataSet,
   ): Promise<FollowsFetchResult> {
-    switch(params.actorId.snsType) {
-      case SNSTypes.ActivityPub:
-        return await this.fetchActivityPubFollowing(params, dataSet);
-      case SNSTypes.ATProto:
-        return await this.fetchATProtoFollows(params, dataSet);
-    }
-  }
-
-  private async fetchActivityPubFollowing(
-    params: NeighborCrawlFollowsFetchParams,
-    dataSet: NeighborCrawlDataSet,
-  ): Promise<FollowsFetchResult> {
-    try {
-      const client = getActivityPubFollowingClient();
-      let pageUri: string|undefined = params.cursor;
-      if (pageUri === undefined) {
-        const actor = await (await getActivityPubActorRepository()).get(params.actorId.value);
-        if (actor === undefined) {
-          return { allFollowsAvailable: false, isError: true };
-        }
-        pageUri = await client.fetchFirstPageUri(actor.following);
-      }
-      if (pageUri === undefined) {
-        return { allFollowsAvailable: false, isError: true };
-      }
-      const follows = await client.fetchPage(pageUri);
-      if (follows === undefined) {
-        return { allFollowsAvailable: false, isError: true };
-      }
-      const followedIds = follows.items.map((item) => {
-        if (typeof item === 'string') {
-          return new ActorId(params.actorId.snsType, item);
-        } else {
-          return null;
-        }
-      }).filter((aid) => aid !== null) as ActorId[];
-      const followsFetchBuffer = getNeighborCrawlStatusRepository().getFollowsFetchBuffer();
-      followsFetchBuffer.add(params.actorId, followedIds);
-      if (follows.next === undefined) {
-        return { allFollowsAvailable: true, isError: false };
-      } else {
-        return { nextParams: { ...params, cursor: follows.next, errorCount: 0 }, allFollowsAvailable: false, isError: false };
-      }
-    } catch(e: any) {
-      console.error('NeighborCrawlWorker.fetchActivityPubFollowing error', e);
-      if (params.errorCount < NeighborCrawlWorker.followsFetchRetryLimit) {
-        return { nextParams: { ...params, errorCount: params.errorCount + 1 }, allFollowsAvailable: false, isError: false };
-      } else {
-        return { allFollowsAvailable: false, isError: true };
-      }
-    }
-  }
-
-  private async fetchATProtoFollows(
-    params: NeighborCrawlFollowsFetchParams,
-    dataSet: NeighborCrawlDataSet,
-  ): Promise<FollowsFetchResult> {
     try {
       const client = getATProtoFollowsClient();
       const response = await client.fetch(params.actorId.value, params.cursor);
       if (response === undefined) {
         return { allFollowsAvailable: false, isError: true };
       }
-      const followedIds = response.followedIds.map((aid) => new ActorId(SNSTypes.ATProto, aid));
+      const followedIds = response.followedIds.map(deserializeActorId);
       const followsFetchBuffer = getNeighborCrawlStatusRepository().getFollowsFetchBuffer();
       followsFetchBuffer.add(params.actorId, followedIds);
       if (response.cursor === undefined) {
@@ -352,7 +283,7 @@ class NeighborCrawlWorker {
         return { nextParams: { ...params, cursor: response.cursor, errorCount: 0 }, allFollowsAvailable: false, isError: false };
       }
     } catch(e: any) {
-      console.error('NeighborCrawlWorker.fetchATProtoFollows error', e);
+      console.error('NeighborCrawlWorker.fetchFollows error', e);
       if (params.errorCount < NeighborCrawlWorker.followsFetchRetryLimit) {
         return { nextParams: { ...params, errorCount: params.errorCount + 1 }, allFollowsAvailable: false, isError: false };
       } else {
@@ -389,27 +320,14 @@ class NeighborCrawlWorker {
 
   private async finalizeCrawl(status: NeighborCrawlStatus): Promise<void> {
     const statusRepository = getNeighborCrawlStatusRepository();
-    const activityPubDataSet = statusRepository.getActivityPubDataSet();
-    const atProtoDataSet = statusRepository.getAtProtoDataSet();
-    const activityPubMemberCount = activityPubDataSet?.groupMemberIds.size || 0;
-    const atProtoMemberCount = atProtoDataSet?.groupMemberIds.size || 0;
-    const memberCount = activityPubMemberCount + atProtoMemberCount;
-    const activityPubNeighborsLimit = memberCount === 0 ? 0 : NeighborCrawlWorker.maxNeighbors * (activityPubMemberCount / memberCount);
-    const atProtoNeighborsLimit = memberCount === 0 ? 0 : NeighborCrawlWorker.maxNeighbors * (atProtoMemberCount / memberCount);
-    const activityPubNeighbors = activityPubDataSet === undefined ? [] : this.selectNeighbors(activityPubDataSet, activityPubNeighborsLimit);
-    const atProtoNeighbors = atProtoDataSet === undefined ? [] : this.selectNeighbors(atProtoDataSet, atProtoNeighborsLimit);
+    const dataSet = statusRepository.getDataSet();
+    const neighbors = dataSet === undefined ? [] : this.selectNeighbors(dataSet, NeighborCrawlWorker.maxNeighbors);
 
     const neighborsRepository = await getNeighborsRepository();
-    neighborsRepository.store({ groupId: status.groupId, activityPubNeighbors, atProtoNeighbors });
+    neighborsRepository.store({ groupId: status.groupId, neighbors });
 
     const resultRepository = await getNeighborCrawlResultRepository();
-    const groupMemberIds: ActorId[] = [];
-    if (activityPubDataSet !== undefined) {
-      groupMemberIds.push(...Array.from(activityPubDataSet.groupMemberIds.values()));
-    }
-    if (atProtoDataSet !== undefined) {
-      groupMemberIds.push(...Array.from(atProtoDataSet.groupMemberIds.values()));
-    }
+    const groupMemberIds = dataSet === undefined ? [] : Array.from(dataSet.groupMemberIds.values());
     resultRepository.store({
       groupId: status.groupId,
       isSucceeded: true,
@@ -437,16 +355,9 @@ class NeighborCrawlWorker {
 
   private async finalizeCrawlByError(status: NeighborCrawlStatus): Promise<void> {
     const statusRepository = getNeighborCrawlStatusRepository();
-    const activityPubDataSet = statusRepository.getActivityPubDataSet();
-    const atProtoDataSet = statusRepository.getAtProtoDataSet();
+    const dataSet = statusRepository.getDataSet();
     const resultRepository = await getNeighborCrawlResultRepository();
-    const groupMemberIds: ActorId[] = [];
-    if (activityPubDataSet !== undefined) {
-      groupMemberIds.push(...Array.from(activityPubDataSet.groupMemberIds.values()));
-    }
-    if (atProtoDataSet !== undefined) {
-      groupMemberIds.push(...Array.from(atProtoDataSet.groupMemberIds.values()));
-    }
+    const groupMemberIds: ActorId[] = dataSet === undefined ? [] : Array.from(dataSet.groupMemberIds.values());
     resultRepository.store({
       groupId: status.groupId,
       isSucceeded: false,
@@ -483,10 +394,7 @@ class FeedFetchEnqueueWorker {
   private async execute(): Promise<void> {
     async function getGroupActors(group: Group): Promise<GroupActors> {
       const neighbors = await (await getNeighborsRepository()).get(group.id);
-      const neighborIds: ActorId[] = [
-        ...neighbors?.atProtoNeighbors?.map((n) => n.actorId) ?? [],
-        ...neighbors?.activityPubNeighbors?.map((n) => n.actorId) ?? [],
-      ];
+      const neighborIds: ActorId[] = neighbors?.neighbors?.map((n) => n.actorId) ?? [];
       return { groupId: group.id, memberIds: group.memberIds, neighborIds: neighborIds };
     }
 
@@ -630,12 +538,7 @@ class FeedFetchWorker {
     const feedFetchQueue = getFeedFetchQueue();
     const previousResult = await feedFetchResultRepository.get(actorId);
 
-    let fetchResult: {isSucceeded: boolean, mostRecentlyPostedAt?: Date};
-    if (actorId.snsType === SNSTypes.ATProto) {
-      fetchResult = await fetchATProtoFeed(actorId, previousResult);
-    } else {
-      fetchResult = {isSucceeded: true};
-    }
+    let fetchResult = await fetchATProtoFeed(actorId, previousResult);
     feedFetchResultRepository.store(
       {
         actorId,

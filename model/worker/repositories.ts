@@ -96,22 +96,16 @@ export class NeighborCrawlResultRepository {
 
 export class NeighborCrawlStatusRepository {
   private status?: NeighborCrawlStatus;
-  private activityPubFetchFinished: boolean = false;
-  private atProtoFetchFinished: boolean = false;
-  private activityPubFollowsFetchQueue: NeighborCrawlFollowsFetchQueue = new NeighborCrawlFollowsFetchQueue();
-  private atProtoFollowsFetchQueue: NeighborCrawlFollowsFetchQueue = new NeighborCrawlFollowsFetchQueue();
+  private fetchFinished: boolean = false;
+  private followsFetchQueue: NeighborCrawlFollowsFetchQueue = new NeighborCrawlFollowsFetchQueue();
   private followsFetchBuffer: NeighborCrawlFollowsFetchBuffer = new NeighborCrawlFollowsFetchBuffer();
-  private activityPubDataSet?: NeighborCrawlDataSet;
-  private atProtoDataSet?: NeighborCrawlDataSet;
+  private dataSet?: NeighborCrawlDataSet;
 
-  initializeCrawl(status: NeighborCrawlStatus, activityPubDataSet?: NeighborCrawlDataSet, atProtoDataSet?: NeighborCrawlDataSet): void {
+  initializeCrawl(status: NeighborCrawlStatus, dataSet?: NeighborCrawlDataSet): void {
     this.status = status;
-    this.activityPubDataSet = activityPubDataSet;
-    this.atProtoDataSet = atProtoDataSet;
-    this.activityPubFetchFinished = false;
-    this.atProtoFetchFinished = false;
-    this.activityPubFollowsFetchQueue.clear();
-    this.atProtoFollowsFetchQueue.clear();
+    this.dataSet = dataSet;
+    this.fetchFinished = false;
+    this.followsFetchQueue.clear();
     this.followsFetchBuffer.clear();
   }
 
@@ -119,50 +113,31 @@ export class NeighborCrawlStatusRepository {
     return this.status;
   }
 
-  getActivityPubDataSet(): NeighborCrawlDataSet|undefined {
-    return this.activityPubDataSet;
+  getDataSet(): NeighborCrawlDataSet|undefined {
+    return this.dataSet;
   }
 
-  getAtProtoDataSet(): NeighborCrawlDataSet|undefined {
-    return this.atProtoDataSet;
-  }
-
-  getActivityPubFollowsFetchQueue(): NeighborCrawlFollowsFetchQueue {
-    return this.activityPubFollowsFetchQueue;
-  }
-
-  getAtProtoFollowsFetchQueue(): NeighborCrawlFollowsFetchQueue { 
-    return this.atProtoFollowsFetchQueue;
+  getFollowsFetchQueue(): NeighborCrawlFollowsFetchQueue {
+    return this.followsFetchQueue;
   }
 
   getFollowsFetchBuffer(): NeighborCrawlFollowsFetchBuffer {
     return this.followsFetchBuffer;
   }
 
-  isActivityPubFetchFinished(): boolean {
-    return this.activityPubFetchFinished;
+  isFetchFinished(): boolean {
+    return this.fetchFinished;
   }
 
-  setActivityPubFetchFinished(): void {
-    this.activityPubFetchFinished = true;
-  }
-
-  isAtProtoFetchFinished(): boolean {
-    return this.atProtoFetchFinished;
-  }
-
-  setAtProtoFetchFinished(): void {
-    this.atProtoFetchFinished = true;
+  setFetchFinished(): void {
+    this.fetchFinished = true;
   }
 
   delete(): void {
     this.status = undefined;
-    this.activityPubFetchFinished = false;
-    this.atProtoFetchFinished = false;
-    this.activityPubDataSet = undefined;
-    this.atProtoDataSet = undefined;
-    this.activityPubFollowsFetchQueue.clear();
-    this.atProtoFollowsFetchQueue.clear();
+    this.fetchFinished = false;
+    this.dataSet = undefined;
+    this.followsFetchQueue.clear();
     this.followsFetchBuffer.clear();
   }
 }

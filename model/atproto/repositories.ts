@@ -1,6 +1,6 @@
 import { BskyAgent, AppBskyActorDefs, AppBskyFeedDefs, stringifyLex, jsonToLex } from '@atproto/api';
 import { Cache, CachedStorage, EphemeralDataStorage, StorageManager, getStorageManager } from '../lib/storage';
-import { ActorId, PostId, Post, Repost, SNSTypes, serializePost, deserializePost } from '../data';
+import { ActorId, PostId, Post, Repost, serializePost, deserializePost } from '../data';
 import { SerializableKeyMap } from '../lib/util';
 import { serializeProfile, deserializeProfile, createPostFromPostView, createPostOrRepostFromFeedViewPost } from './data';
 
@@ -170,10 +170,9 @@ export class PostRepository {
   private client = new PostClient();
 
   async get(postIds: PostId[]): Promise<SerializableKeyMap<PostId, Post>> {
-    const atProtoPostIds = postIds.filter((postId) => postId.snsType === SNSTypes.ATProto);
     const result = new SerializableKeyMap<PostId, Post>();
     const postIdsToFetch: PostId[] = [];
-    for (const postId of atProtoPostIds) {
+    for (const postId of postIds) {
       const cached = await this.cache.get(postId.value)
       if (cached !== undefined) {
         if (cached.value !== undefined) {

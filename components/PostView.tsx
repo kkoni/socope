@@ -24,7 +24,7 @@ export default function PostView(props: Props) {
     }
   })()}, [props]);
 
-  const postUrl = props.post ? getPostUrl(props.post, actor) : undefined;
+  const postUrl = (props.post && actor) ? getPostUrl(props.post, actor) : undefined;
   const view = (
     <View style={postViewStyles.container}>
       <IconView actor={actor}/>

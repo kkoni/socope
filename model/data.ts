@@ -19,16 +19,14 @@ export function parseSNSType(s: string): SNSType|undefined {
 }
 
 export class ActorId implements Serializable {
-  snsType: SNSType;
   value: string;
 
-  constructor(snsType: SNSType, value: string) {
-    this.snsType = snsType;
+  constructor(value: string) {
     this.value = value;
   }
 
   toString(): string {
-    return `${this.snsType}:${this.value}`;
+    return this.value;
   }
 
   equals(other: ActorId): boolean {
@@ -36,41 +34,12 @@ export class ActorId implements Serializable {
   }
 }
 
-export function parseActorId(s: string): ActorId|undefined {
-  const colonIndex = s.indexOf(":");
-  if (colonIndex === -1) {
-    return undefined;
-  }
-  const snsType = parseSNSType(s.substring(0, colonIndex));
-  if (!snsType) {
-    return undefined;
-  }
-  return new ActorId(snsType, s.substring(colonIndex + 1));
-}
-
-export function actorIdToSerializableObject(id: ActorId): any {
-  return {
-    snsType: id.snsType,
-    value: id.value,
-  };
-}
-
-export function serializableObjectToActorId(obj: any): ActorId|undefined {
-  if (obj && obj.snsType && obj.value) {
-    const snsType = parseSNSType(obj.snsType);
-    if (snsType) {
-      return new ActorId(snsType, obj.value);
-    }
-  }
-  return undefined;
-}
-
 export function serializeActorId(id: ActorId): string {
-  return JSON.stringify(actorIdToSerializableObject(id));
+  return id.value;
 }
 
-export function deserializeActorId(s: string): ActorId|undefined {
-  return serializableObjectToActorId(JSON.parse(s));
+export function deserializeActorId(s: string): ActorId {
+  return new ActorId(s);
 }
 
 export interface Actor {
@@ -83,7 +52,7 @@ export interface Actor {
 
 function actorToSerializableObject(actor: Actor): any {
   return {
-    id: actorIdToSerializableObject(actor.id),
+    id: serializeActorId(actor.id),
     uri: actor.uri,
     name: actor.name,
     handle: actor.handle,
@@ -93,7 +62,7 @@ function actorToSerializableObject(actor: Actor): any {
 
 function serializableObjectToActor(obj: any): Actor|undefined {
   if (obj && obj.id && obj.uri && obj.name && obj.handle) {
-    const id = serializableObjectToActorId(obj.id);
+    const id = deserializeActorId(obj.id);
     if (id) {
       return {
         id,
@@ -116,16 +85,14 @@ export function deserializeActor(s: string): Actor|undefined {
 }
 
 export class PostId implements Serializable {
-  snsType: SNSType;
   value: string;
 
-  constructor(snsType: SNSType, value: string) {
-    this.snsType = snsType;
+  constructor(value: string) {
     this.value = value;
   }
 
   toString(): string {
-    return `${this.snsType}:${this.value}`;
+    return this.value;
   }
 
   equals(other: PostId): boolean {
@@ -133,29 +100,12 @@ export class PostId implements Serializable {
   }
 }
 
-export function postIdToSerializableObject(id: PostId): any {
-  return {
-    snsType: id.snsType,
-    value: id.value,
-  };
-}
-
-export function serializableObjectToPostId(obj: any): PostId|undefined {
-  if (obj && obj.snsType && obj.value) {
-    const snsType = parseSNSType(obj.snsType);
-    if (snsType) {
-      return new PostId(snsType, obj.value);
-    }
-  }
-  return undefined;
-}
-
 export function serializePostId(id: PostId): string {
-  return JSON.stringify(postIdToSerializableObject(id));
+  return id.value;
 }
 
-export function deserializePostId(s: string): PostId|undefined {
-  return serializableObjectToPostId(JSON.parse(s));
+export function deserializePostId(s: string): PostId {
+  return new PostId(s);
 }
 
 export interface Post {
@@ -180,12 +130,12 @@ export function deserializePost(s: string): Post|undefined {
 
 export function postToSerializableObject(post: Post): any {
   return {
-    id: postIdToSerializableObject(post.id),
-    authorId: actorIdToSerializableObject(post.authorId),
+    id: serializePostId(post.id),
+    authorId: serializeActorId(post.authorId),
     createdAt: post.createdAt.toISOString(),
     text: post.text.map(postTextPartToSerializableObject),
     embeddedImages: post.embeddedImages.map(embeddedImageToSerializableObject),
-    embeddedPostId: post.embeddedPostId ? postIdToSerializableObject(post.embeddedPostId) : undefined,
+    embeddedPostId: post.embeddedPostId ? serializePostId(post.embeddedPostId) : undefined,
     embeddedWebPage: post.embeddedWebPage ? embeddedWebPageToSerializableObject(post.embeddedWebPage) : undefined,
     reply: post.reply ? replyToSerializableObject(post.reply) : undefined,
     url: post.url,
@@ -194,13 +144,13 @@ export function postToSerializableObject(post: Post): any {
 
 export function serializableObjectToPost(obj: any): Post|undefined {
   if (obj && obj.id && obj.authorId && obj.createdAt && obj.text && obj.embeddedImages) {
-    const id = serializableObjectToPostId(obj.id);
-    const authorId = serializableObjectToActorId(obj.authorId);
+    const id = deserializePostId(obj.id);
+    const authorId = deserializeActorId(obj.authorId);
     if (id && authorId) {
       const createdAt = new Date(obj.createdAt);
       const text = obj.text.map(serializableObjectToPostTextPart).filter((part: any) => part !== undefined) as PostTextPart[];
       const embeddedImages = obj.embeddedImages.map(serializableObjectToEmbeddedImage).filter((image: any) => image !== undefined) as EmbeddedImage[];
-      const embeddedPostId = obj.embeddedPostId ? serializableObjectToPostId(obj.embeddedPostId) : undefined;
+      const embeddedPostId = obj.embeddedPostId ? deserializePostId(obj.embeddedPostId) : undefined;
       const embeddedWebPage = obj.embeddedWebPage ? serializableObjectToEmbeddedWebPage(obj.embeddedWebPage) : undefined;
       const reply = obj.reply ? serializableObjectToReply(obj.reply) : undefined;
       return {
@@ -219,19 +169,15 @@ export function serializableObjectToPost(obj: any): Post|undefined {
   return undefined;
 }
 
-export function getPostUrl(post: Post, actor?: Actor): string|undefined {
-  if (post.id.snsType === SNSTypes.ATProto) {
-    if (actor === undefined) {
-      return undefined;
-    }
-    const idLastSlashIndex = post.id.value.lastIndexOf("/");
-    if (idLastSlashIndex === -1) {
-      return undefined;
-    }
-    return 'https://bsky.app/profile/' + actor.handle + '/post/' + post.id.value.slice(idLastSlashIndex+1);
-  } else {
-    return post.url;
+export function getPostUrl(post: Post, actor: Actor): string|undefined {
+  if (actor === undefined) {
+    return undefined;
   }
+  const idLastSlashIndex = post.id.value.lastIndexOf("/");
+  if (idLastSlashIndex === -1) {
+    return undefined;
+  }
+  return 'https://bsky.app/profile/' + actor.handle + '/post/' + post.id.value.slice(idLastSlashIndex+1);
 }
 
 export interface Reply {
@@ -241,15 +187,15 @@ export interface Reply {
 
 export function replyToSerializableObject(reply: Reply): any {
   return {
-    rootPostId: postIdToSerializableObject(reply.rootPostId),
-    parentPostId: postIdToSerializableObject(reply.parentPostId),
+    rootPostId: serializePostId(reply.rootPostId),
+    parentPostId: serializePostId(reply.parentPostId),
   };
 }
 
 export function serializableObjectToReply(obj: any): Reply|undefined {
   if (obj && obj.rootPostId && obj.parentPostId) {
-    const rootPostId = serializableObjectToPostId(obj.rootPostId);
-    const parentPostId = serializableObjectToPostId(obj.parentPostId);
+    const rootPostId = deserializePostId(obj.rootPostId);
+    const parentPostId = deserializePostId(obj.parentPostId);
     if (rootPostId && parentPostId) {
       return {
         rootPostId,
@@ -272,13 +218,13 @@ export function postTextPartToSerializableObject(part: PostTextPart): any {
     text: part.text,
     isHashtag: part.isHashtag,
     linkUrl: part.linkUrl,
-    mentionedActorId: part.mentionedActorId ? actorIdToSerializableObject(part.mentionedActorId) : undefined,
+    mentionedActorId: part.mentionedActorId ? serializeActorId(part.mentionedActorId) : undefined,
   };
 }
 
 export function serializableObjectToPostTextPart(obj: any): PostTextPart|undefined {
   if (obj && obj.text && obj.isHashtag) {
-    const mentionedActorId = obj.mentionedActorId ? serializableObjectToActorId(obj.mentionedActorId) : undefined;
+    const mentionedActorId = obj.mentionedActorId ? deserializeActorId(obj.mentionedActorId) : undefined;
     return {
       text: obj.text,
       isHashtag: obj.isHashtag,
@@ -395,7 +341,7 @@ function groupToSerializableObject(group: Group): any {
   return {
     id: groupIdToSerializableObject(group.id),
     name: group.name,
-    memberIds: group.memberIds.map(actorIdToSerializableObject),
+    memberIds: group.memberIds.map(serializeActorId),
   };
 }
 
@@ -403,7 +349,7 @@ function serializableObjectToGroup(obj: any): Group|undefined {
   if (obj && obj.id && obj.name && obj.memberIds) {
     const id = serializableObjectToGroupId(obj.id);
     if (id) {
-      const memberIds = obj.memberIds.map(serializableObjectToActorId).filter((id: any) => id !== undefined) as ActorId[];
+      const memberIds = obj.memberIds.map(deserializeActorId).filter((id: any) => id !== undefined) as ActorId[];
       return {
         id,
         name: obj.name,
@@ -424,8 +370,7 @@ export function deserializeGroup(s: string): Group|undefined {
 
 export interface Neighbors {
   groupId: GroupId;
-  activityPubNeighbors: Neighbor[];
-  atProtoNeighbors: Neighbor[];
+  neighbors: Neighbor[];
 }
 
 export interface Neighbor {
@@ -436,14 +381,13 @@ export interface Neighbor {
 function neighborsToSerializableObject(neighbors: Neighbors): any {
   return {
     groupId: groupIdToSerializableObject(neighbors.groupId),
-    activityPubNeighbors: neighbors.activityPubNeighbors.map(neighborToSerializableObject),
-    atProtoNeighbors: neighbors.atProtoNeighbors.map(neighborToSerializableObject),
+    neighbors: neighbors.neighbors.map(neighborToSerializableObject),
   };
 }
 
 function neighborToSerializableObject(neighbor: Neighbor): any {
   return {
-    actorId: actorIdToSerializableObject(neighbor.actorId),
+    actorId: serializeActorId(neighbor.actorId),
     score: neighbor.score,
   };
 }
@@ -454,14 +398,11 @@ function serializableObjectToNeighbors(obj: any): Neighbors|undefined {
     if (!groupId) {
       return undefined;
     }
-    const activityPubNeighbors = obj.activityPubNeighbors ?
-      obj.activityPubNeighbors.map(serializableObjectToNeighbor).filter((neighbor: any) => neighbor !== undefined) as Neighbor[] : [];
-    const atProtoNeighbors = obj.atProtoNeighbors ?
-      obj.atProtoNeighbors.map(serializableObjectToNeighbor).filter((neighbor: any) => neighbor !== undefined) as Neighbor[] : [];
+    const neighbors = obj.neighbors ?
+      obj.neighbors.map(serializableObjectToNeighbor).filter((neighbor: any) => neighbor !== undefined) as Neighbor[] : [];
     return {
       groupId,
-      activityPubNeighbors,
-      atProtoNeighbors,
+      neighbors,
     };
   }
   return undefined;
@@ -469,7 +410,7 @@ function serializableObjectToNeighbors(obj: any): Neighbors|undefined {
 
 function serializableObjectToNeighbor(obj: any): Neighbor|undefined {
   if (obj && obj.actorId && obj.score) {
-    const actorId = serializableObjectToActorId(obj.actorId);
+    const actorId = deserializeActorId(obj.actorId);
     if (actorId) {
       return {
         actorId,

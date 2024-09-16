@@ -14,7 +14,6 @@ import {
   EmbeddedWebPage,
   Reply,
   Repost,
-  SNSTypes,
 } from '../data';
 
 const textEncoder = new TextEncoder();
@@ -150,7 +149,7 @@ export function createPostFromPostView(postView: AppBskyFeedDefs.PostView): Post
         return {
           text,
           isHashtag: false,
-          mentionedActorId: new ActorId(SNSTypes.ATProto, (facet as MentionFacet).did),
+          mentionedActorId: new ActorId((facet as MentionFacet).did),
         };
     }
     return undefined;
@@ -229,7 +228,7 @@ export function createPostFromPostView(postView: AppBskyFeedDefs.PostView): Post
       return undefined;
     }
     const viewRecord = embedRecordView.record as AppBskyEmbedRecord.ViewRecord;
-    return new PostId(SNSTypes.ATProto, viewRecord.uri);
+    return new PostId(viewRecord.uri);
   }
 
   function createReply(postView: AppBskyFeedDefs.PostView): Reply|undefined {
@@ -238,13 +237,13 @@ export function createPostFromPostView(postView: AppBskyFeedDefs.PostView): Post
       return undefined;
     }
     return {
-      rootPostId: new PostId(SNSTypes.ATProto, record.reply.root.uri),
-      parentPostId: new PostId(SNSTypes.ATProto, record.reply.parent.uri),
+      rootPostId: new PostId(record.reply.root.uri),
+      parentPostId: new PostId(record.reply.parent.uri),
     };
   }
 
-  const id = new PostId(SNSTypes.ATProto, postView.uri);
-  const authorId = new ActorId(SNSTypes.ATProto, postView.author.did);
+  const id = new PostId(postView.uri);
+  const authorId = new ActorId(postView.author.did);
   const parsedIndexedAt = Date.parse(postView.indexedAt);
   if (isNaN(parsedIndexedAt)) {
     return undefined;
@@ -281,8 +280,8 @@ export function createPostOrRepostFromFeedViewPost(feedViewPost: AppBskyFeedDefs
     }
     return {
       repost: {
-        repostedPostId: new PostId(SNSTypes.ATProto, feedViewPost.post.uri),
-        createdBy: new ActorId(SNSTypes.ATProto, reasonRepost.by.did),
+        repostedPostId: new PostId(feedViewPost.post.uri),
+        createdBy: new ActorId(reasonRepost.by.did),
         createdAt: new Date(parsedIndexedAt),
       }
     };
