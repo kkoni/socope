@@ -206,7 +206,7 @@ export function postTextPartToSerializableObject(part: PostTextPart): any {
 }
 
 export function serializableObjectToPostTextPart(obj: any): PostTextPart|undefined {
-  if (obj && obj.text && obj.isHashtag) {
+  if (obj && obj.text !== undefined && obj.isHashtag !== undefined) {
     const mentionedActorId = obj.mentionedActorId ? deserializeActorId(obj.mentionedActorId) : undefined;
     return {
       text: obj.text,
@@ -233,7 +233,7 @@ export function embeddedImageToSerializableObject(image: EmbeddedImage): any {
 }
 
 export function serializableObjectToEmbeddedImage(obj: any): EmbeddedImage|undefined {
-  if (obj && obj.url && obj.width && obj.height) {
+  if (obj && obj.url !== undefined && obj.width !== undefined && obj.height !== undefined) {
     return {
       url: obj.url,
       width: obj.width,
@@ -260,7 +260,7 @@ export function embeddedWebPageToSerializableObject(webPage: EmbeddedWebPage): a
 }
 
 export function serializableObjectToEmbeddedWebPage(obj: any): EmbeddedWebPage|undefined {
-  if (obj && obj.url && obj.title && obj.description) {
+  if (obj && obj.url !== undefined && obj.title !== undefined && obj.description !== undefined) {
     return {
       url: obj.url,
       title: obj.title,

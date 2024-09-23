@@ -1,11 +1,12 @@
 import { DateHour } from '../lib/date';
 import { EphemeralDataStorage, StorageManager, getStorageManager } from '../lib/storage';
-import { SerializableValueSet } from '../lib/util';
+import { SerializableValueSet, SerializableKeyMap } from '../lib/util';
 import { GroupId, PostId } from '../data';
 import { PostIndex, serializePostIndices, deserializePostIndices } from './data';
 
 interface Singletons {
   postIndexRepository: PostIndexRepository;
+  newPostIndicesRepository: NewPostIndicesRepository;
 }
 
 const singletons = {} as Singletons;
@@ -16,6 +17,13 @@ export async function getPostIndexRepository(): Promise<PostIndexRepository> {
     singletons.postIndexRepository = new PostIndexRepository(storageManager);
   }
   return singletons.postIndexRepository;
+}
+
+export function getNewPostIndicesRepository(): NewPostIndicesRepository {
+  if (!singletons.newPostIndicesRepository) {
+    singletons.newPostIndicesRepository = new NewPostIndicesRepository();
+  }
+  return singletons.newPostIndicesRepository;
 }
 
 class PostIndexRepository {
@@ -136,5 +144,32 @@ class PostIndicesBuffer {
 
   isExpired(): boolean {
     return this.changedAt.getTime() < Date.now() - PostIndicesBuffer.bufferTTL;
+  }
+}
+
+class NewPostIndicesRepository {
+  private static setSizeLimit = 10000;
+
+  private maps: SerializableKeyMap<GroupId, SerializableKeyMap<PostId, PostIndex>> = new SerializableKeyMap();
+
+  add(groupId: GroupId, postIndex: PostIndex) {
+    let map = this.maps.get(groupId);
+    if (map === undefined) {
+      map = new SerializableKeyMap<PostId, PostIndex>();
+      this.maps.set(groupId, map);
+    }
+    if (map.size < NewPostIndicesRepository.setSizeLimit) {
+      map.set(postIndex.postId, postIndex);
+    }
+  }
+
+  poll(groupId: GroupId): PostIndex[] {
+    const map = this.maps.get(groupId);
+    if (map === undefined) {
+      return [];
+    }
+    const indices = Array.from(map.values());
+    this.maps.delete(groupId);
+    return indices;
   }
 }

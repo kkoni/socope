@@ -21,7 +21,7 @@ import {
   getFeedFetchResultRepository,
   getGroupActorMapping,
 } from './repositories';
-import { getPostIndexRepository } from '../posts/repositories';
+import { getPostIndexRepository, getNewPostIndicesRepository } from '../posts/repositories';
 
 let neighborCrawlStartWorker: NeighborCrawlStartWorker|undefined;
 let neighborCrawlWorker: NeighborCrawlWorker|undefined;
@@ -401,7 +401,6 @@ class FeedFetchEnqueueWorker {
       for (const actorId of actorIds) {
         if (!feedFetchQueue.has(actorId)) {
           const previousResult = await feedFetchResultRepository.get(actorId);
-          console.log('actorId=' + actorId + ' previousResult=' + JSON.stringify(previousResult));
           if (previousResult === undefined) {
             feedFetchQueue.enqueue(actorId, new Date());
           } else if (previousResult.isSucceeded) {
@@ -515,6 +514,7 @@ class FeedFetchWorker {
     async function storePostIndex(posts: Post[]) {
       const groupIds = groupActorMapping.getMemberGroupIds(actorId);
       const postIndexRepository = await getPostIndexRepository();
+      const newPostIndicesRepository = getNewPostIndicesRepository();
       
       for (const post of posts) {
         const postIndex: PostIndex = {
@@ -523,7 +523,11 @@ class FeedFetchWorker {
           postedBy: actorId,
         }
         for (const groupId of groupIds) {
-          await postIndexRepository.add(groupId, postIndex);
+          const added = await postIndexRepository.add(groupId, postIndex);
+          if (added) {
+            console.log('New post fetched: ' + JSON.stringify(post));
+            newPostIndicesRepository.add(groupId, postIndex);
+          }
         }
       }
     }

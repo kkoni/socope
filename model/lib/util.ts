@@ -200,6 +200,14 @@ export class SerializableKeyMap<K extends Serializable, V> {
     return new SerializableKeyMapIterator(this.keyMap.values(), this.valueMap);
   }
 
+  public values(): IterableIterator<V> {
+    return this.valueMap.values();
+  }
+  
+  public get size(): number {
+    return this.valueMap.size;
+  }
+
   public clone(): SerializableKeyMap<K, V> {
     return new SerializableKeyMap(new Map(this.keyMap), new Map(this.valueMap));
   }

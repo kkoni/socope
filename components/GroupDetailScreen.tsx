@@ -6,7 +6,7 @@ import { useNavigation } from '@react-navigation/native';
 import { SerializableKeyMap, linkHandler } from '../model/lib/util';
 import { selectedGroupIdState, allGroupsState, jumpedGroupIdState, currentNeighborCrawlStatusState } from '../states';
 import { updateGroup, deleteGroup } from '../facades';
-import { Actor, ActorId, Group, SNSTypes, Neighbors } from '../model/data';
+import { Actor, ActorId, Group, Neighbors } from '../model/data';
 import { getActorRepository, getGroupRepository, getNeighborsRepository } from '../model/repositories';
 import { NeighborCrawlStatus, NeighborCrawlResult } from '../model/worker/data';
 import { getNeighborCrawlStatusRepository, getNeighborCrawlResultRepository } from '../model/worker/repositories';

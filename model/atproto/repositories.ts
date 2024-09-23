@@ -189,6 +189,7 @@ export class PostRepository {
         if (post !== undefined) {
           await this.cache.store(post.id.value, post);
           result.set(post.id, post);
+          console.log('fetched: ' + JSON.stringify(post));
         }
       }
     }
