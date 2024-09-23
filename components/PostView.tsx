@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
-import { StyleSheet, Pressable, View } from 'react-native';
+import { Image, StyleSheet, Pressable, View } from 'react-native';
 import { Avatar, Text } from 'react-native-paper';
 import { Hyperlink } from 'react-native-hyperlink';
 import { linkHandler } from '../model/lib/util';
 import { formatTimeDiff } from '../model/lib/date';
 import { commonStyles } from '../model/lib/style';
-import { Actor, ActorId, Post, PostTextPart, getPostUrl } from '../model/data';
+import { Actor, ActorId, EmbeddedImage, Post, PostTextPart, getPostUrl } from '../model/data';
 import { getActorRepository } from '../model/repositories';
 import { PostIndex } from '../model/posts/data';
 
@@ -127,9 +127,29 @@ export function ContentView(props: ContentViewProps) {
     getTextPartComponent(textPart, index)
   );
 
+  function getEmbeddedImageComponent(embeddedImages: EmbeddedImage[]) {
+    return embeddedImages.map((embeddedImage, index) => {
+      const aspectRatio = embeddedImage.width / embeddedImage.height;
+      return (
+        <View key={'ei-' + index}>
+          <Image
+            source={{uri: embeddedImage.url}}
+            resizeMode="contain"
+            style={{width: '90%', aspectRatio: aspectRatio}}
+          />
+        </View>
+      )
+    });
+  }
+
   return (
-    <View style={contentViewStyles.textContainer}>
-      { textPartComponents }
+    <View>
+      <View style={contentViewStyles.textContainer}>
+        { textPartComponents }
+      </View>
+      <View>
+        { getEmbeddedImageComponent(props.post.embeddedImages) }
+      </View>
     </View>
   );
 }
