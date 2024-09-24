@@ -12,10 +12,12 @@ import { PostIndex } from '../model/posts/data';
 type Props = {
   postIndex: PostIndex;
   post?: Post;
+  embeddedPost?: Post;
 };
 
 export default function PostView(props: Props) {
   const [ actor, setActor ] = useState<Actor|undefined>(undefined);
+  const [ authorOfEmbeddedPost, setAuthorOfEmbeddedPost ] = useState<Actor|undefined>(undefined);
 
   useEffect(() => {(async () => {
     const actor = await getActorRepository().get(props.postIndex.postedBy);
@@ -24,13 +26,31 @@ export default function PostView(props: Props) {
     }
   })()}, [props]);
 
+  useEffect(() => {(async () => {
+    if (props.embeddedPost !== undefined) {
+      const actor = await getActorRepository().get(props.embeddedPost.authorId);
+      if (actor !== undefined) {
+        setAuthorOfEmbeddedPost(actor);
+      }
+    }
+  })()}, [props.embeddedPost]);
+
   const postUrl = (props.post && actor) ? getPostUrl(props.post, actor) : undefined;
   const view = (
     <View style={postViewStyles.container}>
-      <IconView actor={actor}/>
+      <IconView actor={actor} size={32}/>
       <View style={postViewStyles.mainContainer}>
-        <HeaderView actorId={props.postIndex.postedBy} postedAt={props.postIndex.postedAt} actor={actor}/>
-        { props.post && <View style={postViewStyles.content}><ContentView post={props.post}/></View> }
+        <HeaderView actorId={props.postIndex.postedBy} postedAt={props.postIndex.postedAt} actor={actor} withIcon={false}/>
+        { props.post &&
+          <View style={postViewStyles.content}>
+            <ContentView post={props.post}/>
+            { props.embeddedPost && authorOfEmbeddedPost &&
+              <View style={postViewStyles.embeddedPost}>
+                <EmbeddedPostView post={props.embeddedPost} author={authorOfEmbeddedPost}/>
+              </View>
+            }
+          </View>
+        }
       </View>
     </View>
   );
@@ -51,10 +71,12 @@ const postViewStyles = StyleSheet.create({
   iconView: { flex: 1 },
   mainContainer: { flex: 8, flexDirection: 'column', marginLeft: 5 },
   content: { marginTop: 5 },
+  embeddedPost: { margin: 5, padding: 5, borderWidth: 1, borderRadius: 10, borderColor: 'lightgray' },
 });
 
 type IconViewProps = {
   actor?: Actor;
+  size: number;
 }
 
 export function IconView(props: IconViewProps) {
@@ -64,7 +86,7 @@ export function IconView(props: IconViewProps) {
   }
   return (
     <View>
-      <Avatar.Image source={{uri: iconUri}} size={32}/>
+      <Avatar.Image source={{uri: iconUri}} size={props.size}/>
     </View>
   );
 }
@@ -73,6 +95,7 @@ type HeaderViewProps = {
   actorId: ActorId;
   postedAt: Date;
   actor?: Actor;
+  withIcon: boolean;
 };
 
 export function HeaderView(props: HeaderViewProps) {
@@ -88,6 +111,7 @@ export function HeaderView(props: HeaderViewProps) {
   }
   return (
     <View style={headerViewStyles.container}>
+      { props.withIcon && <View style={headerViewStyles.icon}><IconView actor={props.actor} size={16}/></View> }
       <Text style={headerViewStyles.actorName}>{props.actor.name}</Text>
       <Text style={headerViewStyles.actorHandle}>@{props.actor.handle}</Text>
       <Text style={headerViewStyles.timeDiff}>{timeDiff}</Text>
@@ -97,6 +121,7 @@ export function HeaderView(props: HeaderViewProps) {
 
 const headerViewStyles = StyleSheet.create({
   container: { flexDirection: 'row' },
+  icon: { marginRight: 5 },
   actorName: { fontWeight: 'bold' },
   actorHandle: { color: 'gray', marginLeft: 5 },
   timeDiff: { color: 'gray', marginLeft: 5 },
@@ -157,3 +182,19 @@ export function ContentView(props: ContentViewProps) {
 const contentViewStyles = StyleSheet.create({
   textContainer: { flexDirection: 'column' },
 });
+
+type EmbeddedPostViewProps = {
+  post: Post;
+  author: Actor;
+};
+
+export function EmbeddedPostView(props: EmbeddedPostViewProps) {
+  return <View style={postViewStyles.container}>
+    <View style={postViewStyles.mainContainer}>
+      <HeaderView actorId={props.author.id} postedAt={props.post.createdAt} actor={props.author} withIcon={true}/>
+      <View style={postViewStyles.content}>
+        <ContentView post={props.post}/>
+      </View>
+    </View>
+  </View>
+}

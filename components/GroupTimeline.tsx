@@ -43,9 +43,23 @@ export default function GroupTimeline(props: Props) {
     for (const postId of postIds) {
       loadedPostIds.add(postId);
     }
+    const embeddedPostIdSet = new SerializableValueSet<PostId>();
     for (const [postId, post] of (await getPostRepository().get(postIds)).entries()) {
       loadedPosts.set(postId, post);
+      if (post.embeddedPostId !== undefined) {
+        embeddedPostIdSet.add(post.embeddedPostId);
+      }
     }
+    const embeddedPostIds = Array.from(embeddedPostIdSet.values()).filter(postId => !loadedPosts.has(postId));
+    if (embeddedPostIds.length > 0) {
+      for (const postId of embeddedPostIds) {
+        loadedPostIds.add(postId);
+      }
+      for (const [postId, post] of (await getPostRepository().get(embeddedPostIds)).entries()) {
+        loadedPosts.set(postId, post);
+      }
+    }
+
     setLoadedPostIds(loadedPostIds.clone());
     setLoadedPosts(loadedPosts.clone());
   }
@@ -88,9 +102,11 @@ export default function GroupTimeline(props: Props) {
     if (loadedPostIds.has(postIndex.postId) && !loadedPosts.has(postIndex.postId)) {
       return undefined;
     }
+    const post = loadedPosts.get(postIndex.postId);
+    const embeddedPost = post?.embeddedPostId ? loadedPosts.get(post.embeddedPostId) : undefined;
     return (
       <View key={postIndex.postId.toString()}>
-        <PostView postIndex={postIndex} post={loadedPosts.get(postIndex.postId)}/>
+        <PostView postIndex={postIndex} post={post} embeddedPost={embeddedPost}/>
         <Divider style={styles.divider}/>
       </View>
     );
