@@ -5,7 +5,7 @@ import { Hyperlink } from 'react-native-hyperlink';
 import { linkHandler } from '../model/lib/util';
 import { formatTimeDiff } from '../model/lib/date';
 import { commonStyles } from '../model/lib/style';
-import { Actor, ActorId, EmbeddedImage, Post, PostTextPart, getPostUrl } from '../model/data';
+import { Actor, ActorId, EmbeddedImage, EmbeddedWebPage, Post, PostTextPart, getPostUrl } from '../model/data';
 import { getActorRepository } from '../model/repositories';
 import { PostIndex } from '../model/posts/data';
 
@@ -49,6 +49,11 @@ export default function PostView(props: Props) {
                 <EmbeddedPostView post={props.embeddedPost} author={authorOfEmbeddedPost}/>
               </View>
             }
+            { props.post.embeddedWebPage &&
+              <View style={postViewStyles.embeddedWebPage}>
+                <EmbeddedWebPageView webPage={props.post.embeddedWebPage}/>
+              </View>
+            }
           </View>
         }
       </View>
@@ -72,6 +77,7 @@ const postViewStyles = StyleSheet.create({
   mainContainer: { flex: 8, flexDirection: 'column', marginLeft: 5 },
   content: { marginTop: 5 },
   embeddedPost: { margin: 5, padding: 5, borderWidth: 1, borderRadius: 10, borderColor: 'lightgray' },
+  embeddedWebPage: { margin: 5, padding: 5, borderWidth: 1, borderRadius: 10, borderColor: 'lightgray' },
 });
 
 type IconViewProps = {
@@ -189,12 +195,50 @@ type EmbeddedPostViewProps = {
 };
 
 export function EmbeddedPostView(props: EmbeddedPostViewProps) {
-  return <View style={postViewStyles.container}>
-    <View style={postViewStyles.mainContainer}>
-      <HeaderView actorId={props.author.id} postedAt={props.post.createdAt} actor={props.author} withIcon={true}/>
-      <View style={postViewStyles.content}>
-        <ContentView post={props.post}/>
+  const postUrl = getPostUrl(props.post, props.author);
+  const view = (
+    <View style={postViewStyles.container}>
+      <View style={postViewStyles.mainContainer}>
+        <HeaderView actorId={props.author.id} postedAt={props.post.createdAt} actor={props.author} withIcon={true}/>
+        <View style={postViewStyles.content}>
+          <ContentView post={props.post}/>
+        </View>
       </View>
     </View>
-  </View>
+  );
+  if (postUrl === undefined) {
+    return view;
+  } else {
+    return (
+      <Pressable onPress={() => linkHandler(postUrl)}>
+        { view }
+      </Pressable>
+    );
+  }
 }
+
+type EmbeddedWebPageViewProps = {
+  webPage: EmbeddedWebPage;
+}
+
+export function EmbeddedWebPageView(props: EmbeddedWebPageViewProps) {
+  return (
+    <Pressable onPress={() => linkHandler(props.webPage.url)}>
+      <View>
+        <Text style={embeddedWebPageViewStyles.title}>{props.webPage.title}</Text>
+        <Text>{props.webPage.description}</Text>
+        { props.webPage.thumbnailImageUrl &&
+          <Image
+            source={{uri: props.webPage.thumbnailImageUrl}}
+            style={embeddedWebPageViewStyles.thumbnail}
+          />
+        }
+      </View>
+    </Pressable>
+  );
+}
+
+const embeddedWebPageViewStyles = StyleSheet.create({
+  title: { fontWeight: 'bold', marginBottom: 10 },
+  thumbnail: { width: '100%', aspectRatio: 16/9 },
+});
