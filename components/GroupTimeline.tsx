@@ -43,19 +43,23 @@ export default function GroupTimeline(props: Props) {
     for (const postId of postIds) {
       loadedPostIds.add(postId);
     }
-    const embeddedPostIdSet = new SerializableValueSet<PostId>();
+    const referredPostIdSet = new SerializableValueSet<PostId>();
     for (const [postId, post] of (await getPostRepository().get(postIds)).entries()) {
       loadedPosts.set(postId, post);
       if (post.embeddedPostId !== undefined) {
-        embeddedPostIdSet.add(post.embeddedPostId);
+        referredPostIdSet.add(post.embeddedPostId);
+      }
+      if (post.reply !== undefined) {
+        referredPostIdSet.add(post.reply.parentPostId);
+        referredPostIdSet.add(post.reply.rootPostId);
       }
     }
-    const embeddedPostIds = Array.from(embeddedPostIdSet.values()).filter(postId => !loadedPosts.has(postId));
-    if (embeddedPostIds.length > 0) {
-      for (const postId of embeddedPostIds) {
+    const referredPostIds = Array.from(referredPostIdSet.values()).filter(postId => !loadedPosts.has(postId));
+    if (referredPostIds.length > 0) {
+      for (const postId of referredPostIds) {
         loadedPostIds.add(postId);
       }
-      for (const [postId, post] of (await getPostRepository().get(embeddedPostIds)).entries()) {
+      for (const [postId, post] of (await getPostRepository().get(referredPostIds)).entries()) {
         loadedPosts.set(postId, post);
       }
     }
@@ -104,9 +108,11 @@ export default function GroupTimeline(props: Props) {
     }
     const post = loadedPosts.get(postIndex.postId);
     const embeddedPost = post?.embeddedPostId ? loadedPosts.get(post.embeddedPostId) : undefined;
+    const parentPost = post?.reply?.parentPostId ? loadedPosts.get(post.reply.parentPostId) : undefined;
+    const rootPost = post?.reply?.rootPostId ? loadedPosts.get(post.reply.rootPostId) : undefined;
     return (
       <View key={postIndex.postId.toString()}>
-        <PostView postIndex={postIndex} post={post} embeddedPost={embeddedPost}/>
+        <PostView postIndex={postIndex} post={post} embeddedPost={embeddedPost} parentPost={parentPost} rootPost={rootPost}/>
         <Divider style={styles.divider}/>
       </View>
     );

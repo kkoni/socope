@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Image, StyleSheet, Pressable, View } from 'react-native';
-import { Avatar, Text } from 'react-native-paper';
+import { Avatar, Divider, Icon, Text } from 'react-native-paper';
 import { Hyperlink } from 'react-native-hyperlink';
 import { linkHandler } from '../model/lib/util';
 import { formatTimeDiff } from '../model/lib/date';
@@ -13,11 +13,15 @@ type Props = {
   postIndex: PostIndex;
   post?: Post;
   embeddedPost?: Post;
+  parentPost?: Post;
+  rootPost?: Post;
 };
 
 export default function PostView(props: Props) {
   const [ actor, setActor ] = useState<Actor|undefined>(undefined);
   const [ authorOfEmbeddedPost, setAuthorOfEmbeddedPost ] = useState<Actor|undefined>(undefined);
+  const [ authorOfParentPost, setAuthorOfParentPost ] = useState<Actor|undefined>(undefined);
+  const [ authorOfRootPost, setAuthorOfRootPost ] = useState<Actor|undefined>(undefined);
 
   useEffect(() => {(async () => {
     const actor = await getActorRepository().get(props.postIndex.postedBy);
@@ -34,6 +38,24 @@ export default function PostView(props: Props) {
       }
     }
   })()}, [props.embeddedPost]);
+
+  useEffect(() => {(async () => {
+    if (props.parentPost !== undefined) {
+      const actor = await getActorRepository().get(props.parentPost.authorId);
+      if (actor !== undefined) {
+        setAuthorOfParentPost(actor);
+      }
+    }
+  })()}, [props.parentPost]);
+
+  useEffect(() => {(async () => {
+    if (props.rootPost !== undefined) {
+      const actor = await getActorRepository().get(props.rootPost.authorId);
+      if (actor !== undefined) {
+        setAuthorOfRootPost(actor);
+      }
+    }
+  })()}, [props.rootPost]);
 
   const postUrl = (props.post && actor) ? getPostUrl(props.post, actor) : undefined;
   const view = (
@@ -60,15 +82,32 @@ export default function PostView(props: Props) {
     </View>
   );
 
+  let postView;
   if (postUrl === undefined) {
-    return view;
+    postView = view;
   } else {
-    return (
+    postView = (
       <Pressable onPress={() => linkHandler(postUrl)}>
         { view }
       </Pressable>
     );
   }
+
+  return (
+    <View>
+      { postView }
+      { props.parentPost && authorOfParentPost &&
+        <View style={postViewStyles.repliedPost}>
+          <RepliedPostView
+            parentPost={props.parentPost}
+            parentPostAuthor={authorOfParentPost}
+            rootPost={props.rootPost}
+            rootPostAuthor={authorOfRootPost}
+          />
+        </View>
+      }
+    </View>
+  )
 }
 
 const postViewStyles = StyleSheet.create({
@@ -78,6 +117,7 @@ const postViewStyles = StyleSheet.create({
   content: { marginTop: 5 },
   embeddedPost: { margin: 5, padding: 5, borderWidth: 1, borderRadius: 10, borderColor: 'lightgray' },
   embeddedWebPage: { margin: 5, padding: 5, borderWidth: 1, borderRadius: 10, borderColor: 'lightgray' },
+  repliedPost: { marginTop: 10, marginLeft: 30 },
 });
 
 type IconViewProps = {
@@ -241,4 +281,55 @@ export function EmbeddedWebPageView(props: EmbeddedWebPageViewProps) {
 const embeddedWebPageViewStyles = StyleSheet.create({
   title: { fontWeight: 'bold', marginBottom: 10 },
   thumbnail: { width: '100%', aspectRatio: 16/9 },
+});
+
+type ReplivedPostViewProps = {
+  parentPost: Post;
+  parentPostAuthor: Actor;
+  rootPost?: Post;
+  rootPostAuthor?: Actor;
+};
+
+export function RepliedPostView(props: ReplivedPostViewProps) {
+  function getPostView(post: Post, author: Actor) {
+    const postUrl = getPostUrl(post, author);
+    const view = (
+      <View style={postViewStyles.container}>
+        <View style={postViewStyles.mainContainer}>
+          <HeaderView actorId={author.id} postedAt={post.createdAt} actor={author} withIcon={true}/>
+          <View style={postViewStyles.content}>
+            <ContentView post={post}/>
+          </View>
+        </View>
+      </View>
+    );
+    if (postUrl === undefined) {
+      return view;
+    } else {
+      return (
+        <Pressable onPress={() => linkHandler(postUrl)}>
+          { view }
+        </Pressable>
+      );
+    }
+  }
+
+  return (
+    <View>
+      <Divider style={repliedPostViewStyles.divider}/>
+      { getPostView(props.parentPost, props.parentPostAuthor) }
+      { props.rootPost && props.rootPostAuthor && props.rootPost.id !== props.parentPost.id &&
+        <View>
+          <View style={repliedPostViewStyles.dotsToRoot}><Icon source="dots-vertical" color="gray" size={20}/></View>
+          <Divider style={repliedPostViewStyles.divider}/>
+          { getPostView(props.rootPost!, props.rootPostAuthor!) }
+        </View>
+      }
+    </View>
+  )
+}
+
+const repliedPostViewStyles = StyleSheet.create({
+  divider: { marginVertical: 5 },
+  dotsToRoot: { alignItems: 'center' },
 });
