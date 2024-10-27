@@ -420,7 +420,7 @@ export class Cache<D> {
     deserializer: (s: string) => D|undefined
   ) {
     this.cache = new LibCache({
-      namespace: 'soccet-cache',
+      namespace: 'socope-cache',
       policy: {
         stdTTL: cacheTTL,
         maxEntries: cacheMaxKeys,

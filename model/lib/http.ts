@@ -1,4 +1,4 @@
-export const userAgent = 'soccet/0.1';
+export const userAgent = 'socope/0.1';
 
 const http = { get };
 export default http;
