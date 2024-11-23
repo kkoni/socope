@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useRecoilState } from 'recoil';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
-import { Avatar, Button, Portal, Snackbar, Text, TextInput } from 'react-native-paper';
+import { Avatar, Button, IconButton, Portal, Snackbar, Text, TextInput } from 'react-native-paper';
 import { useNavigation } from '@react-navigation/native';
 import { SerializableKeyMap, linkHandler } from '../model/lib/util';
 import { selectedGroupIdState, allGroupsState, jumpedGroupIdState, currentNeighborCrawlStatusState } from '../states';
@@ -11,7 +11,7 @@ import { getActorRepository, getGroupRepository, getNeighborsRepository } from '
 import { NeighborCrawlStatus, NeighborCrawlResult } from '../model/worker/data';
 import { getNeighborCrawlStatusRepository, getNeighborCrawlResultRepository } from '../model/worker/repositories';
 
-const neighborCountToShow = 20;
+const initialNeighborCountToShow = 20;
 
 export default function GroupDetailScreen() {
   const [ selectedGroupId ] = useRecoilState(selectedGroupIdState);
@@ -24,6 +24,21 @@ export default function GroupDetailScreen() {
   const [ neighborCrawlStatus, setNeighborCrawlStatus ] = useState<NeighborCrawlStatus|undefined>(undefined);
   const [ neighborCrawlResult, setNeighborCrawlResult ] = useState<NeighborCrawlResult|undefined>(undefined);
   const [ closeNeighbors, setCloseNeighbors ] = useState<SerializableKeyMap<ActorId, Actor>>(new SerializableKeyMap());
+  const [ neighborCountToShow, setNeighborCountToShow ] = useState<number>(initialNeighborCountToShow);
+
+  const showNeighbors = async (count: number) => {
+    if (neighbors !== undefined) {
+      const closeNeighbors = new SerializableKeyMap<ActorId, Actor>();
+      const neighborsToShow = neighbors.neighbors.slice(0, count);
+      for (const neighbor of neighborsToShow) {
+        const actor = await getActorRepository().get(neighbor.actorId);
+        if (actor !== undefined) {
+          closeNeighbors.set(actor.id, actor);
+        }
+      }
+      setCloseNeighbors(closeNeighbors);
+    }
+  }
 
   useEffect(() => { reloadGroup() }, [selectedGroupId]);
 
@@ -43,16 +58,9 @@ export default function GroupDetailScreen() {
       const neighborsRepository = await getNeighborsRepository();
       const neighbors = await neighborsRepository.get(group.id);
       setNeighbors(neighbors);
+      setNeighborCountToShow(initialNeighborCountToShow);
       if (neighbors !== undefined) {
-        const closeNeighbors = new SerializableKeyMap<ActorId, Actor>();
-        const neighborsToShow = neighbors.neighbors.slice(0, neighborCountToShow);
-        for (const neighbor of neighborsToShow) {
-          const actor = await getActorRepository().get(neighbor.actorId);
-          if (actor !== undefined) {
-            closeNeighbors.set(actor.id, actor);
-          }
-        }
-        setCloseNeighbors(closeNeighbors);
+        showNeighbors(initialNeighborCountToShow);
       }
     };
     fetchNeighborCrawlData();
@@ -76,6 +84,12 @@ export default function GroupDetailScreen() {
         setActors(actors);
       }
     }
+  };
+
+  const expandNeighborList = () => {
+    const incrementedNeighborCountToShow = neighborCountToShow + initialNeighborCountToShow;
+    setNeighborCountToShow(incrementedNeighborCountToShow);
+    showNeighbors(incrementedNeighborCountToShow);
   };
 
   const openEditor = () => {
@@ -125,9 +139,11 @@ export default function GroupDetailScreen() {
           actors={actors}
           neighbors={neighbors}
           closeNeighbors={closeNeighbors}
+          neighborCountToShow={neighborCountToShow}
           neighborCrawlStatus={neighborCrawlStatus}
           neighborCrawlResult={neighborCrawlResult}
           openEditorHandler={openEditor}
+          expandNeighborListHandler={expandNeighborList}
         />
       }
     </View>
@@ -139,9 +155,11 @@ type GroupDetailViewProps = {
   actors: SerializableKeyMap<ActorId, Actor>;
   neighbors: Neighbors|undefined;
   closeNeighbors: SerializableKeyMap<ActorId, Actor>;
+  neighborCountToShow: number;
   neighborCrawlStatus: NeighborCrawlStatus|undefined;
   neighborCrawlResult: NeighborCrawlResult|undefined;
   openEditorHandler: () => void;
+  expandNeighborListHandler: () => void;
 };
 
 function GroupDetailView(props: GroupDetailViewProps) {
@@ -186,7 +204,7 @@ function GroupDetailView(props: GroupDetailViewProps) {
   const actorViews = props.group.memberIds.map(actorId => {
     return createActorView(actorId, props.actors.get(actorId));
   });
-  const neighborViews = props.neighbors === undefined ? [] : props.neighbors.neighbors.slice(0, neighborCountToShow).map(neighbor => {
+  const neighborViews = props.neighbors === undefined ? [] : props.neighbors.neighbors.slice(0, props.neighborCountToShow).map(neighbor => {
     return createActorView(neighbor.actorId, props.closeNeighbors.get(neighbor.actorId));
   });
 
@@ -226,6 +244,11 @@ function GroupDetailView(props: GroupDetailViewProps) {
               { neighborViews }
             </View>
           )}
+          { props.neighbors && props.neighborCountToShow < props.neighbors.neighbors.length && (
+            <View style={groupDetailStyles.expandNeighborListView}>
+              <IconButton icon="menu-down" onPress={props.expandNeighborListHandler}/>
+            </View>
+          )}
         </View>
       )}
     </ScrollView>
@@ -241,8 +264,8 @@ const groupDetailStyles = StyleSheet.create({
   actorRemoveView: { flex: 2, justifyContent: 'center' },
   actorRemoveButton: { padding: 0 },
   actorListView: { marginTop: 10 },
+  expandNeighborListView: { flexDirection: 'row', justifyContent: 'center' },
 });
-
 
 type GroupEditorViewProps = {
   group: Group;
@@ -420,7 +443,7 @@ function GroupEditorView(props: GroupEditorViewProps) {
       </View>
     </View>
   );
-  const neighborViews = props.neighbors === undefined ? [] : props.neighbors.neighbors.slice(0, neighborCountToShow).map(neighbor => {
+  const neighborViews = props.neighbors === undefined ? [] : props.neighbors.neighbors.slice(0, initialNeighborCountToShow).map(neighbor => {
     return createNeighborView(neighbor.actorId, props.closeNeighbors.get(neighbor.actorId));
   });
 
