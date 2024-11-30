@@ -177,7 +177,7 @@ export class FeedFetchQueue {
   private queue: PriorityQueue<ActorId> = new PriorityQueue<ActorId>(10000, (value: ActorId) => value.toString());
 
   enqueue(actorId: ActorId, nextFetchTime: Date): void {
-    this.queue.enqueue(actorId, nextFetchTime.getDate());
+    this.queue.enqueue(actorId, nextFetchTime.getTime());
   }
 
   peek(): { actorId: ActorId, nextFetchTime: Date }|undefined {

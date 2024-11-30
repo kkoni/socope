@@ -525,7 +525,6 @@ class FeedFetchWorker {
         for (const groupId of groupIds) {
           const added = await postIndexRepository.add(groupId, postIndex);
           if (added) {
-            console.log('New post fetched: ' + JSON.stringify(post));
             newPostIndicesRepository.add(groupId, postIndex);
           }
         }

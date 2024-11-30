@@ -31,6 +31,13 @@ describe('PriorityQueue', () => {
     expect(queue.dequeue()).toEqual({ value: 'a', priority: 5 });
 
     expect(queue.isEmpty()).toEqual(true);
+
+    expect(queue.enqueue('a', 2)).toEqual(true);
+    expect(queue.enqueue('b', 5)).toEqual(true);
+    expect(queue.enqueue('a', 10)).toEqual(false);
+    expect(queue.dequeue()).toEqual({ value: 'a', priority: 2 });
+    expect(queue.dequeue()).toEqual({ value: 'b', priority: 5 });
+    expect(queue.isEmpty()).toEqual(true);
   });
 });
 

@@ -129,6 +129,7 @@ export class PriorityQueue<T> {
       }
       this.queue[ptr] = popped!;
     }
+    this.valueSet.delete(this.valueSerializer(ret.value));
     return ret;
   }
 
