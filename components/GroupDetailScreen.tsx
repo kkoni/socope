@@ -26,7 +26,7 @@ export default function GroupDetailScreen() {
   const [ closeNeighbors, setCloseNeighbors ] = useState<SerializableKeyMap<ActorId, Actor>>(new SerializableKeyMap());
   const [ neighborCountToShow, setNeighborCountToShow ] = useState<number>(initialNeighborCountToShow);
 
-  const showNeighbors = async (count: number) => {
+  const showNeighbors = async (count: number, neighbors: Neighbors) => {
     if (neighbors !== undefined) {
       const closeNeighbors = new SerializableKeyMap<ActorId, Actor>();
       const neighborsToShow = neighbors.neighbors.slice(0, count);
@@ -60,7 +60,7 @@ export default function GroupDetailScreen() {
       setNeighbors(neighbors);
       setNeighborCountToShow(initialNeighborCountToShow);
       if (neighbors !== undefined) {
-        showNeighbors(initialNeighborCountToShow);
+        showNeighbors(initialNeighborCountToShow, neighbors);
       }
     };
     fetchNeighborCrawlData();
@@ -89,7 +89,9 @@ export default function GroupDetailScreen() {
   const expandNeighborList = () => {
     const incrementedNeighborCountToShow = neighborCountToShow + initialNeighborCountToShow;
     setNeighborCountToShow(incrementedNeighborCountToShow);
-    showNeighbors(incrementedNeighborCountToShow);
+    if (neighbors !== undefined) {
+      showNeighbors(incrementedNeighborCountToShow, neighbors);
+    }
   };
 
   const openEditor = () => {
