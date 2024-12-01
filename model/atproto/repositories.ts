@@ -105,12 +105,53 @@ export class ActorRepository {
     }
   }
 
+  async fetchActors(ids: string[]): Promise<Map<string, AppBskyActorDefs.ProfileViewDetailed>> {
+    const agent = getBskyAgent();
+    const response = await agent.getProfiles({actors: ids});
+    if (!response.success) {
+      throw new Error('BlueSky getProfiles error: unknown');
+    }
+    const result = new Map<string, AppBskyActorDefs.ProfileViewDetailed>();
+    for (const profile of response.data.profiles) {
+      result.set(profile.did, profile);
+      this.storage.store(profile.did, profile);
+    }
+    for (const id of ids) {
+      if (!result.has(id)) {
+        this.storage.store(id, undefined);
+      }
+    }
+    return result;
+  }
+
   async get(id: string): Promise<AppBskyActorDefs.ProfileViewDetailed|undefined> {
     const cached = await this.storage.get(id);
     if (cached !== undefined) {
       return cached.value;
     }
     return await this.fetch(id);
+  }
+
+  async getActors(ids: string[]): Promise<Map<string, AppBskyActorDefs.ProfileViewDetailed>> {
+    const result = new Map<string, AppBskyActorDefs.ProfileViewDetailed>();
+    const idsToFetch: string[] = [];
+    for (const id of ids) {
+      const cached = await this.storage.get(id);
+      if (cached !== undefined) {
+        if (cached.value !== undefined) {
+          result.set(id, cached.value);
+        }
+      } else {
+        idsToFetch.push(id);
+      }
+    }
+    if (idsToFetch.length > 0) {
+      const fetched = await this.fetchActors(idsToFetch);
+      for (const [id, profile] of fetched) {
+        result.set(id, profile);
+      }
+    }
+    return result;
   }
 }
 

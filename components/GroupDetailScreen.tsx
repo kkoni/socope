@@ -30,11 +30,9 @@ export default function GroupDetailScreen() {
     if (neighbors !== undefined) {
       const closeNeighbors = new SerializableKeyMap<ActorId, Actor>();
       const neighborsToShow = neighbors.neighbors.slice(0, count);
-      for (const neighbor of neighborsToShow) {
-        const actor = await getActorRepository().get(neighbor.actorId);
-        if (actor !== undefined) {
-          closeNeighbors.set(actor.id, actor);
-        }
+      const actors = await getActorRepository().getActors(neighborsToShow.map(neighbor => neighbor.actorId));
+      for (const actor of actors.values()) {
+        closeNeighbors.set(actor.id, actor);
       }
       setCloseNeighbors(closeNeighbors);
     }

@@ -82,6 +82,16 @@ export class ActorRepository {
     return atProtoActor ? this.convertATProtoActor(atProtoActor) : undefined;
   }
 
+  async getActors(ids: ActorId[]): Promise<SerializableKeyMap<ActorId, Actor>> {
+    const atProtoActors = await (await getATProtoActorRepository()).getActors(ids.map(id => id.value));
+    const result = new SerializableKeyMap<ActorId, Actor>();
+    for (const atProtoActor of atProtoActors.values()) {
+      const actor = this.convertATProtoActor(atProtoActor);
+      result.set(actor.id, actor);
+    }
+    return result
+  }
+
   private convertATProtoActor(actor: AppBskyActorDefs.ProfileViewDetailed): Actor {
     return {
       id: new ActorId(actor.did),
