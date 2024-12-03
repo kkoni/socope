@@ -182,6 +182,16 @@ export class FeedClient {
       throw new Error('BlueSky getAuthorFeed error: unknown');
     }
   }
+
+  async fetchActorLikes(actorId: string, limit: number, cursor?: string): Promise<{posts: AppBskyFeedDefs.FeedViewPost[], cursor?: string}> {
+    const agent = getBskyAgent();
+    const response = await agent.getActorLikes({actor: actorId, limit, cursor});
+    if (response.success) {
+      return {posts: response.data.feed, cursor: response.data.cursor};
+    } else {
+      throw new Error('BlueSky getActorLikes error: unknown');
+    }
+  }
 }
 
 export class PostClient {
@@ -265,6 +275,18 @@ export class FeedRepository {
       }
     }
     return {posts, reposts, cursor: fetchedFeed.cursor};
+  }
+
+  async fetchActorLikes(actorId: ActorId, limit: number, cursor?: string): Promise<{posts: Post[], cursor?: string}> {
+    const fetchedFeed = await this.client.fetchActorLikes(actorId.value, limit, cursor);
+    const posts: Post[] = [];
+    for (const feedViewPost of fetchedFeed.posts) {
+      const postOrRepost = createPostOrRepostFromFeedViewPost(feedViewPost);
+      if (postOrRepost.post !== undefined) {
+        posts.push(postOrRepost.post);
+      }
+    }
+    return {posts, cursor: fetchedFeed.cursor};
   }
 }
 
