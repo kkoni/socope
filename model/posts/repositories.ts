@@ -94,6 +94,7 @@ class PostIndexRepository {
 
   async deleteAll() {
     await this.storageManager.deleteEphemeralDataByPrefix(PostIndexRepository.storageKeyPrefix)
+    this.buffers.clear();
   }
 }
 

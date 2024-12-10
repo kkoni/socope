@@ -1,5 +1,6 @@
 import { SerializableKeyMap, SerializableValueSet, equalsAsSet, getEpochSeconds } from '../lib/util';
-import { ActorId, Group, Neighbor, Post, deserializeActorId } from '../data';
+import { DateHour } from '../lib/date';
+import { ActorId, Group, Neighbor, Post, Repost, deserializeActorId } from '../data';
 import { getGroupRepository, getFollowsRepository, getNeighborsRepository } from '../repositories';
 import { PostIndex } from '../posts/data';
 import {
@@ -22,12 +23,14 @@ import {
   getGroupActorMapping,
 } from './repositories';
 import { getPostIndexRepository, getNewPostIndicesRepository } from '../posts/repositories';
+import { getReferenceIndexRepository, getRecentReferenceIndexRepository } from '../references/repositories';
 
 let neighborCrawlStartWorker: NeighborCrawlStartWorker|undefined;
 let neighborCrawlWorker: NeighborCrawlWorker|undefined;
 let feedFetchEnqueueWorker: FeedFetchEnqueueWorker|undefined;
 let feedFetchWorker: FeedFetchWorker|undefined;
 let postIndexFlushWorker: PostIndexFlushWorker|undefined;
+let recentReferenceIndexFlushWorker: RecentReferenceIndexFlushWorker|undefined;
 
 export function startWorkers(setCurrentNeighborCrawlStatus: (status: NeighborCrawlStatus|undefined) => void) {
   if (neighborCrawlStartWorker === undefined) {
@@ -50,6 +53,10 @@ export function startWorkers(setCurrentNeighborCrawlStatus: (status: NeighborCra
     postIndexFlushWorker = new PostIndexFlushWorker();
     postIndexFlushWorker.start();
   }
+  if (recentReferenceIndexFlushWorker === undefined) {
+    recentReferenceIndexFlushWorker = new RecentReferenceIndexFlushWorker();
+    recentReferenceIndexFlushWorker.start();
+  }
 }
 
 export function stopWorkers() {
@@ -58,6 +65,7 @@ export function stopWorkers() {
   feedFetchEnqueueWorker?.stop();
   feedFetchWorker?.stop();
   postIndexFlushWorker?.stop();
+  recentReferenceIndexFlushWorker?.stop();
 }
 
 class NeighborCrawlStartWorker {
@@ -422,7 +430,7 @@ class FeedFetchEnqueueWorker {
       }
       groupActorMapping.setGroupActors(groupActorsArray);
       enqueueNewActors(groupActorMapping.getAllMemberIds(), memberSuccessFeedFetchIntervalMillis, memberErrorFeedFetchIntervalMillis);
-      //enqueueNewActors(groupActorMapping.getAllNeighborIds(), neighborSuccessFeedFetchIntervalMillis, neighborErrorFeedFetchIntervalMillis);
+      enqueueNewActors(groupActorMapping.getAllNeighborIds(), neighborSuccessFeedFetchIntervalMillis, neighborErrorFeedFetchIntervalMillis);
     } catch(e) {
       console.error('FeedFetchWorker error', e);
     }
@@ -476,28 +484,34 @@ class FeedFetchWorker {
     async function fetchATProtoFeed(actorId: ActorId, previousResult?: FeedFetchResult): Promise<{isSucceeded: boolean, mostRecentlyPostedAt?:Date}> {
       const feedRepository = getATProtoFeedRepository();
   
-      async function fetchPosts(limit: number, cursor?: string): Promise<{posts: Post[], cursor?: string}> {
+      async function fetchPosts(limit: number, cursor?: string): Promise<{posts: Post[], reposts: Repost[], cursor?: string}> {
         const result = await feedRepository.fetchAuthorFeed(actorId, limit, isMember, cursor);
         const newPosts = result.posts.filter((post) => {
           return post.createdAt !== undefined && (previousResult?.mostRecentlyPostedAt === undefined || previousResult.mostRecentlyPostedAt.getTime() < post.createdAt.getTime());
         });
-        return { posts: newPosts, cursor: newPosts.length === limit ? result.cursor : undefined };
+        const newReposts = result.reposts.filter((repost) => {
+          return repost.createdAt !== undefined && (previousResult?.mostRecentlyPostedAt === undefined || previousResult.mostRecentlyPostedAt.getTime() < repost.createdAt.getTime());
+        });
+        return { posts: newPosts, reposts: newReposts, cursor: newPosts.length === limit ? result.cursor : undefined };
       }
   
       try {
         const firstFetchResult = await fetchPosts(1);
-        if (firstFetchResult.posts.length === 0) {
+        if (firstFetchResult.posts.length === 0 && firstFetchResult.reposts.length === 0) {
           return {isSucceeded: true};
         }
         const posts = [...firstFetchResult.posts];
+        const reposts = [...firstFetchResult.reposts];
         let cursor: string|undefined = firstFetchResult.cursor;
         while(cursor !== undefined && posts.length < FeedFetchWorker.limitPerActor) {
           const fetchResult = await fetchPosts(FeedFetchWorker.limitPerFetch, cursor);
           posts.push(...fetchResult.posts);
+          reposts.push(...fetchResult.reposts);
           cursor = fetchResult.cursor;
         }
-        await processPosts(posts);
+        await processPosts(posts, reposts);
         const mostRecentlyPostedAt = (posts.map((post) => post.createdAt).filter((x) => x !== undefined) as Date[])
+          .concat(reposts.map((repost) => repost.createdAt).filter((x) => x !== undefined) as Date[])
           .reduce((a, b) => a.getTime() > b.getTime() ? a : b);
         return {isSucceeded: true, mostRecentlyPostedAt };
       } catch(e) {
@@ -506,9 +520,9 @@ class FeedFetchWorker {
       }
     }
 
-    async function processPosts(posts: Post[]) {
+    async function processPosts(posts: Post[], reposts: Repost[]) {
       storePostIndex(posts);
-      countReferences(posts);
+      countReferences(posts, reposts);
     }
 
     async function storePostIndex(posts: Post[]) {
@@ -531,8 +545,40 @@ class FeedFetchWorker {
       }
     }
 
-    async function countReferences(posts: Post[]) {
-      // TODO: implementations
+    async function countReferences(posts: Post[], reposts: Repost[]) {
+      console.log('countReferences: actor=' + actorId.toString() + ', posts=' + posts.length + ', reposts=' + reposts.length);
+      const recentReferenceIndexRepository = await getRecentReferenceIndexRepository();
+      const memberGroupIds = groupActorMapping.getMemberGroupIds(actorId);
+      const neighborGroupIds = groupActorMapping.getNeighborGroupIds(actorId);
+
+      for (const post of posts) {
+        const dateHour = DateHour.of(post.createdAt);
+        if (post.embeddedPostId !== undefined) {
+          for (const groupId of memberGroupIds) {
+            await recentReferenceIndexRepository.addQuote(groupId, dateHour, post.embeddedPostId, post.id, true);
+          }
+          for (const groupId of neighborGroupIds) {
+            await recentReferenceIndexRepository.addQuote(groupId, dateHour, post.embeddedPostId, post.id, false);
+          }
+        }
+        if (post.reply !== undefined) {
+          for (const groupId of memberGroupIds) {
+            await recentReferenceIndexRepository.addReply(groupId, dateHour, post.reply.rootPostId, post.id, true);
+          }
+          for (const groupId of neighborGroupIds) {
+            await recentReferenceIndexRepository.addReply(groupId, dateHour, post.reply.rootPostId, post.id, false);
+          }
+        }
+      }
+      for (const repost of reposts) {
+        const dateHour = DateHour.of(repost.createdAt);
+        for (const groupId of memberGroupIds) {
+          await recentReferenceIndexRepository.addRepost(groupId, dateHour, repost.repostedPostId, actorId, true);
+        }
+        for (const groupId of neighborGroupIds) {
+          await recentReferenceIndexRepository.addRepost(groupId, dateHour, repost.repostedPostId, actorId, false);
+        }
+      }
     }
 
     const feedFetchResultRepository = await getFeedFetchResultRepository();
@@ -587,6 +633,31 @@ class PostIndexFlushWorker {
       await postIndexRepository.flushAll();
     } catch(e) {
       console.error('PostIndexFlushWorker error', e);
+    }
+  }
+}
+
+class RecentReferenceIndexFlushWorker {
+  private static intervalMillis = 60000;
+
+  private clearInterval: any|undefined;
+  
+  start(){
+    this.clearInterval = setInterval(() => { this.execute(); }, RecentReferenceIndexFlushWorker.intervalMillis);
+  }
+
+  stop() {
+    if (this.clearInterval !== undefined) {
+      clearInterval(this.clearInterval);
+    }
+  }
+
+  private async execute(): Promise<void> {
+    try {
+      const recentReferenceIndexRepository = await getRecentReferenceIndexRepository();
+      await recentReferenceIndexRepository.flushAll();
+    } catch(e) {
+      console.error('RecentReferenceIndexFlushWorker error', e);
     }
   }
 }
