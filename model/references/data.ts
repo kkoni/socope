@@ -20,6 +20,22 @@ export interface ReferringPosts {
   replies: PostId[];
 }
 
+export const referenceScoreMemberFactor = 5;
+
+export function getReferenceScore(index: ReferenceIndex): number {
+  return (
+    index.countsByMembers.quote +
+    index.countsByMembers.reply +
+    index.countsByMembers.repost +
+    index.countsByMembers.like * 0.5
+  ) * referenceScoreMemberFactor + (
+    index.countsByNeighbors.quote +
+    index.countsByNeighbors.reply +
+    index.countsByNeighbors.repost +
+    index.countsByNeighbors.like * 0.5
+  );
+}
+
 export function serializeReferenceIndices(indices: ReferenceIndex[]): string {
   return JSON.stringify(indices.map(referenceIndexToSerializableObject));
 }

@@ -1,6 +1,6 @@
 import { SerializableKeyMap, SerializableValueSet, equalsAsSet, getEpochSeconds } from '../lib/util';
-import { DateHour } from '../lib/date';
-import { ActorId, Group, Neighbor, Post, Repost, deserializeActorId } from '../data';
+import { DateHour, WrappedDate } from '../lib/date';
+import { ActorId, Group, GroupId, Neighbor, Post, PostId, Repost, deserializeActorId } from '../data';
 import { getGroupRepository, getFollowsRepository, getNeighborsRepository } from '../repositories';
 import { PostIndex } from '../posts/data';
 import {
@@ -23,6 +23,7 @@ import {
   getGroupActorMapping,
 } from './repositories';
 import { getPostIndexRepository, getNewPostIndicesRepository } from '../posts/repositories';
+import { ReferenceIndex, getReferenceScore } from '../references/data';
 import { getReferenceIndexRepository, getRecentReferenceIndexRepository } from '../references/repositories';
 
 let neighborCrawlStartWorker: NeighborCrawlStartWorker|undefined;
@@ -31,6 +32,7 @@ let feedFetchEnqueueWorker: FeedFetchEnqueueWorker|undefined;
 let feedFetchWorker: FeedFetchWorker|undefined;
 let postIndexFlushWorker: PostIndexFlushWorker|undefined;
 let recentReferenceIndexFlushWorker: RecentReferenceIndexFlushWorker|undefined;
+let referenceIndexCalculationWorker: ReferenceIndexCalculationWorker|undefined;
 
 export function startWorkers(setCurrentNeighborCrawlStatus: (status: NeighborCrawlStatus|undefined) => void) {
   if (neighborCrawlStartWorker === undefined) {
@@ -57,6 +59,10 @@ export function startWorkers(setCurrentNeighborCrawlStatus: (status: NeighborCra
     recentReferenceIndexFlushWorker = new RecentReferenceIndexFlushWorker();
     recentReferenceIndexFlushWorker.start();
   }
+  if (referenceIndexCalculationWorker === undefined) {
+    referenceIndexCalculationWorker = new ReferenceIndexCalculationWorker();
+    referenceIndexCalculationWorker.start();
+  }
 }
 
 export function stopWorkers() {
@@ -66,6 +72,7 @@ export function stopWorkers() {
   feedFetchWorker?.stop();
   postIndexFlushWorker?.stop();
   recentReferenceIndexFlushWorker?.stop();
+  referenceIndexCalculationWorker?.stop();
 }
 
 class NeighborCrawlStartWorker {
@@ -546,7 +553,6 @@ class FeedFetchWorker {
     }
 
     async function countReferences(posts: Post[], reposts: Repost[]) {
-      console.log('countReferences: actor=' + actorId.toString() + ', posts=' + posts.length + ', reposts=' + reposts.length);
       const recentReferenceIndexRepository = await getRecentReferenceIndexRepository();
       const memberGroupIds = groupActorMapping.getMemberGroupIds(actorId);
       const neighborGroupIds = groupActorMapping.getNeighborGroupIds(actorId);
@@ -659,5 +665,76 @@ class RecentReferenceIndexFlushWorker {
     } catch(e) {
       console.error('RecentReferenceIndexFlushWorker error', e);
     }
+  }
+}
+
+class ReferenceIndexCalculationWorker {
+  private static intervalMillis = 600000;
+  private static indexCountLimitPerDay = 1000;
+
+  private clearInterval: any|undefined;
+
+  start(){
+    this.clearInterval = setInterval(() => { this.execute(); }, ReferenceIndexCalculationWorker.intervalMillis);
+  }
+
+  stop() {
+    if (this.clearInterval !== undefined) {
+      clearInterval(this.clearInterval);
+    }
+  }
+
+  private async execute(): Promise<void> {
+    const today = new WrappedDate(new Date());
+    const yesterday = today.prev();
+    await this.calculateReferenceIndexForDate(today);
+    await this.calculateReferenceIndexForDate(yesterday);
+  }
+
+  private async calculateReferenceIndexForDate(date: WrappedDate): Promise<void> {
+    const groups = (await (await getGroupRepository()).getAll()).map((group) => group.id);
+    for (const groupId of groups) {
+      await this.calculateReferenceIndexForGroup(date, groupId);
+    }
+  }
+
+  private async calculateReferenceIndexForGroup(date: WrappedDate, groupId: GroupId): Promise<void> {
+    const recentReferenceIndexRepository = await getRecentReferenceIndexRepository();
+    const referenceIndexRepository = await getReferenceIndexRepository();
+    const sumIndices = new SerializableKeyMap<PostId, ReferenceIndex>();
+    for (var hour = 0; hour < 24; hour++) {
+      const dateHour = new DateHour(date, hour);
+      const hourIndices = await recentReferenceIndexRepository.get(groupId, dateHour);
+      for (const index of hourIndices) {
+        let sumIndex: ReferenceIndex = sumIndices.get(index.postId) ?? {
+          postId: index.postId,
+          countsByMembers: { quote: 0, reply: 0, repost: 0, like: 0 },
+          countsByNeighbors: { quote: 0, reply: 0, repost: 0, like: 0 },
+          repostingActors: [],
+          referringPosts: { quotes: [], replies: [] },
+        };
+        sumIndex.countsByMembers.quote += index.countsByMembers.quote;
+        sumIndex.countsByMembers.reply += index.countsByMembers.reply;
+        sumIndex.countsByMembers.repost += index.countsByMembers.repost;
+        sumIndex.countsByMembers.like += index.countsByMembers.like;
+        sumIndex.countsByNeighbors.quote += index.countsByNeighbors.quote;
+        sumIndex.countsByNeighbors.reply += index.countsByNeighbors.reply;
+        sumIndex.countsByNeighbors.repost += index.countsByNeighbors.repost;
+        sumIndex.countsByNeighbors.like += index.countsByNeighbors.like;
+        sumIndex.repostingActors.push(...index.repostingActors);
+        sumIndex.referringPosts.quotes.push(...index.referringPosts.quotes);
+        sumIndex.referringPosts.replies.push(...index.referringPosts.replies);
+        sumIndices.set(index.postId, sumIndex);
+      }
+    }
+    const sumIndicesWithScore: {index: ReferenceIndex, score: number}[] = Array.from(sumIndices.values()).map(index => {
+      return {
+        index: index,
+        score: getReferenceScore(index),
+      }
+    });
+    sumIndicesWithScore.sort((a, b) => b.score - a.score);
+    referenceIndexRepository.store(groupId, date, sumIndicesWithScore.slice(0, ReferenceIndexCalculationWorker.indexCountLimitPerDay).map((x) => x.index));
+    console.log('Calculated reference index for group ' + groupId.toString() + ' on ' + date.toString() + ' with ' + sumIndicesWithScore.length + ' posts');
   }
 }
