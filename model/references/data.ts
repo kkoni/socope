@@ -22,6 +22,43 @@ export interface ReferringPosts {
 
 export const referenceScoreMemberFactor = 5;
 
+export function createEmptyReferenceIndex(postId: PostId): ReferenceIndex {
+  return {
+    postId: postId,
+    countsByMembers: {
+      quote: 0,
+      reply: 0,
+      repost: 0,
+      like: 0,
+    },
+    countsByNeighbors: {
+      quote: 0,
+      reply: 0,
+      repost: 0,
+      like: 0,
+    },
+    repostingActors: [],
+    referringPosts: {
+      quotes: [],
+      replies: [],
+    },
+  };
+}
+
+export function addReferenceIndex(target: ReferenceIndex, added: ReferenceIndex) {
+  target.countsByMembers.quote += added.countsByMembers.quote;
+  target.countsByMembers.reply += added.countsByMembers.reply;
+  target.countsByMembers.repost += added.countsByMembers.repost;
+  target.countsByMembers.like += added.countsByMembers.like;
+  target.countsByNeighbors.quote += added.countsByNeighbors.quote;
+  target.countsByNeighbors.reply += added.countsByNeighbors.reply;
+  target.countsByNeighbors.repost += added.countsByNeighbors.repost;
+  target.countsByNeighbors.like += added.countsByNeighbors.like;
+  target.repostingActors.push(...added.repostingActors);
+  target.referringPosts.quotes.push(...added.referringPosts.quotes);
+  target.referringPosts.replies.push(...added.referringPosts.replies);
+}
+
 export function getReferenceScore(index: ReferenceIndex): number {
   return (
     index.countsByMembers.quote +
@@ -91,7 +128,7 @@ function serializableObjectToReferenceIndex(obj: any): ReferenceIndex|undefined 
 }
 
 function serializableObjectToCounts(obj: any): Counts|undefined {
-  if (obj && obj.q && obj.r && obj.rp && obj.l) {
+  if (obj && obj.q !== undefined && obj.r !== undefined && obj.rp !== undefined && obj.l != undefined) {
     return {
       quote: obj.q,
       reply: obj.r,

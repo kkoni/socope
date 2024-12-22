@@ -16,6 +16,7 @@ import {
 import { createDrawerNavigator } from '@react-navigation/drawer';
 import CreateGroupScreen from './components/CreateGroupScreen';
 import HomeScreen from './components/HomeScreen';
+import HomeScreenToggleButtons from './components/HomeScreenToggleButtons';
 import GroupDetailScreen from './components/GroupDetailScreen';
 import WorkerLauncher from './components/WorkerLauncher';
 import DevToolsScreen from './components/DevToolsScreen';
@@ -60,7 +61,7 @@ export function AppContainer() {
 
   return (
     <Drawer.Navigator screenOptions={{headerShown: true}}>
-      <Drawer.Screen name="Home" options={{headerTitle: 'Soccet'}} component={HomeScreen}/>
+      <Drawer.Screen name="Home" options={{headerRight: () => (<HomeScreenToggleButtons/>)}} component={HomeScreen}/>
       <Drawer.Screen name="Create a Group" component={CreateGroupScreen}/>
       { allGroups.length >= 1 && <Drawer.Screen name="Group Detail" component={GroupDetailScreen}/> }
       <Drawer.Screen name="Dev Tools" component={DevToolsScreen}/>

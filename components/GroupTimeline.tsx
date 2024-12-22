@@ -112,7 +112,14 @@ export default function GroupTimeline(props: Props) {
     const rootPost = post?.reply?.rootPostId ? loadedPosts.get(post.reply.rootPostId) : undefined;
     return (
       <View key={postIndex.postId.toString()}>
-        <PostView postIndex={postIndex} post={post} embeddedPost={embeddedPost} parentPost={parentPost} rootPost={rootPost}/>
+        <PostView
+          postedBy={postIndex.postedBy}
+          postedAt={postIndex.postedAt}
+          post={post}
+          embeddedPost={embeddedPost}
+          parentPost={parentPost}
+          rootPost={rootPost}
+        />
         <Divider style={styles.divider}/>
       </View>
     );

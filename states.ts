@@ -21,3 +21,8 @@ export const currentNeighborCrawlStatusState = atom<NeighborCrawlStatus|undefine
   key: 'currentNeighborCrawlStatusState',
   default: undefined,
 });
+
+export const groupScreenModeState = atom<'timeline'|'ranking'>({
+  key: 'groupScreenModeState',
+  default: 'timeline'
+});

@@ -23,7 +23,7 @@ import {
   getGroupActorMapping,
 } from './repositories';
 import { getPostIndexRepository, getNewPostIndicesRepository } from '../posts/repositories';
-import { ReferenceIndex, getReferenceScore } from '../references/data';
+import { ReferenceIndex, getReferenceScore, createEmptyReferenceIndex, addReferenceIndex } from '../references/data';
 import { getReferenceIndexRepository, getRecentReferenceIndexRepository } from '../references/repositories';
 
 let neighborCrawlStartWorker: NeighborCrawlStartWorker|undefined;
@@ -675,6 +675,7 @@ class ReferenceIndexCalculationWorker {
   private clearInterval: any|undefined;
 
   start(){
+    this.execute();
     this.clearInterval = setInterval(() => { this.execute(); }, ReferenceIndexCalculationWorker.intervalMillis);
   }
 
@@ -706,24 +707,8 @@ class ReferenceIndexCalculationWorker {
       const dateHour = new DateHour(date, hour);
       const hourIndices = await recentReferenceIndexRepository.get(groupId, dateHour);
       for (const index of hourIndices) {
-        let sumIndex: ReferenceIndex = sumIndices.get(index.postId) ?? {
-          postId: index.postId,
-          countsByMembers: { quote: 0, reply: 0, repost: 0, like: 0 },
-          countsByNeighbors: { quote: 0, reply: 0, repost: 0, like: 0 },
-          repostingActors: [],
-          referringPosts: { quotes: [], replies: [] },
-        };
-        sumIndex.countsByMembers.quote += index.countsByMembers.quote;
-        sumIndex.countsByMembers.reply += index.countsByMembers.reply;
-        sumIndex.countsByMembers.repost += index.countsByMembers.repost;
-        sumIndex.countsByMembers.like += index.countsByMembers.like;
-        sumIndex.countsByNeighbors.quote += index.countsByNeighbors.quote;
-        sumIndex.countsByNeighbors.reply += index.countsByNeighbors.reply;
-        sumIndex.countsByNeighbors.repost += index.countsByNeighbors.repost;
-        sumIndex.countsByNeighbors.like += index.countsByNeighbors.like;
-        sumIndex.repostingActors.push(...index.repostingActors);
-        sumIndex.referringPosts.quotes.push(...index.referringPosts.quotes);
-        sumIndex.referringPosts.replies.push(...index.referringPosts.replies);
+        const sumIndex: ReferenceIndex = sumIndices.get(index.postId) ?? createEmptyReferenceIndex(index.postId);
+        addReferenceIndex(sumIndex, index);
         sumIndices.set(index.postId, sumIndex);
       }
     }
@@ -735,6 +720,5 @@ class ReferenceIndexCalculationWorker {
     });
     sumIndicesWithScore.sort((a, b) => b.score - a.score);
     referenceIndexRepository.store(groupId, date, sumIndicesWithScore.slice(0, ReferenceIndexCalculationWorker.indexCountLimitPerDay).map((x) => x.index));
-    console.log('Calculated reference index for group ' + groupId.toString() + ' on ' + date.toString() + ' with ' + sumIndicesWithScore.length + ' posts');
   }
 }

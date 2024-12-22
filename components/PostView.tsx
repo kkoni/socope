@@ -7,10 +7,10 @@ import { formatTimeDiff } from '../model/lib/date';
 import { commonStyles } from '../model/lib/style';
 import { Actor, ActorId, EmbeddedImage, EmbeddedWebPage, Post, PostTextPart, getPostUrl } from '../model/data';
 import { getActorRepository } from '../model/repositories';
-import { PostIndex } from '../model/posts/data';
 
 type Props = {
-  postIndex: PostIndex;
+  postedBy: ActorId;
+  postedAt: Date;
   post?: Post;
   embeddedPost?: Post;
   parentPost?: Post;
@@ -24,7 +24,7 @@ export default function PostView(props: Props) {
   const [ authorOfRootPost, setAuthorOfRootPost ] = useState<Actor|undefined>(undefined);
 
   useEffect(() => {(async () => {
-    const actor = await getActorRepository().get(props.postIndex.postedBy);
+    const actor = await getActorRepository().get(props.postedBy);
     if (actor !== undefined) {
       setActor(actor);
     }
@@ -62,7 +62,7 @@ export default function PostView(props: Props) {
     <View style={postViewStyles.container}>
       <IconView actor={actor} size={32}/>
       <View style={postViewStyles.mainContainer}>
-        <HeaderView actorId={props.postIndex.postedBy} postedAt={props.postIndex.postedAt} actor={actor} withIcon={false}/>
+        <HeaderView actorId={props.postedBy} postedAt={props.postedAt} actor={actor} withIcon={false}/>
         { props.post &&
           <View style={postViewStyles.content}>
             <ContentView post={props.post}/>
@@ -200,7 +200,10 @@ export function ContentView(props: ContentViewProps) {
 
   function getEmbeddedImageComponent(embeddedImages: EmbeddedImage[]) {
     return embeddedImages.map((embeddedImage, index) => {
-      const aspectRatio = embeddedImage.width / embeddedImage.height;
+      let aspectRatio = 1;
+      if (embeddedImage.width > 0 && embeddedImage.height > 0) {
+        aspectRatio = embeddedImage.width / embeddedImage.height;
+      }
       return (
         <View key={'ei-' + index}>
           <Image

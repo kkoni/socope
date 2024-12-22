@@ -46,7 +46,7 @@ export class ReferenceIndexRepository {
   }
 
   private getKey(groupId: GroupId, date: WrappedDate): string {
-    return `${groupId}:${date.toString()}`;
+    return `${groupId.toString()}:${date.toString()}`;
   }
 
   async get(groupId: GroupId, date: WrappedDate): Promise<ReferenceIndex[]> {
@@ -82,7 +82,7 @@ export class RecentReferenceIndexRepository {
   }
 
   private getKey(groupId: GroupId, dateHour: DateHour): string {
-    return `${groupId}:${dateHour.toString()}`;
+    return `${groupId.toString()}:${dateHour.toString()}`;
   }
 
   async get(groupId: GroupId, dateHour: DateHour): Promise<ReferenceIndex[]> {

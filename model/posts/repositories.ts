@@ -46,7 +46,7 @@ class PostIndexRepository {
   }
 
   private getKey(groupId: GroupId, dateHour: DateHour): string {
-    return `${groupId}:${dateHour.toString()}`;
+    return `${groupId.toString()}:${dateHour.toString()}`;
   }
 
   async get(groupId: GroupId, dateHour: DateHour): Promise<PostIndex[]> {
