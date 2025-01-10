@@ -12,6 +12,7 @@ import {
   NavigationContainer,
   DarkTheme as NavigationDarkTheme,
   DefaultTheme as NavigationDefaultTheme,
+  Theme as NavigationTheme,
 } from '@react-navigation/native';
 import { createDrawerNavigator } from '@react-navigation/drawer';
 import CreateGroupScreen from './components/CreateGroupScreen';
@@ -27,22 +28,33 @@ const { LightTheme } = adaptNavigationTheme({
   reactNavigationLight: NavigationDefaultTheme,
   reactNavigationDark: NavigationDarkTheme,
 });
-const CombinedLightTheme = {
+const CombinedLightThemeForPaper = {
   ...MD3LightTheme,
   ...LightTheme,
   colors: {
     ...MD3LightTheme.colors,
     ...LightTheme.colors,
+  },
+  fonts: {
+    ...MD3LightTheme.fonts,
   }
 };
+const CombinedLightThemeForNavigation = {
+  ...MD3LightTheme,
+  ...LightTheme,
+  colors: {
+    ...MD3LightTheme.colors,
+    ...LightTheme.colors,
+  },
+}
 
 const Drawer = createDrawerNavigator();
 
 export default function App() {
   return (
     <RecoilRoot>
-      <PaperProvider theme={CombinedLightTheme}>
-        <NavigationContainer theme={CombinedLightTheme}>
+      <PaperProvider theme={CombinedLightThemeForPaper}>
+        <NavigationContainer theme={CombinedLightThemeForNavigation as unknown as NavigationTheme}>
           <AppContainer/>
           <StatusBar style="auto" />
           <WorkerLauncher/>

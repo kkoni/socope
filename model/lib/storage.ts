@@ -53,41 +53,15 @@ const ephemeralDataTableName = "ephemeral_data";
 const longLivedDataTableName = "long_lived_data";
 const ephemeralDataCountLimit = 1000000;
 
-function isResultSetError(result: SQLite.ResultSet | SQLite.ResultSetError): result is SQLite.ResultSetError {
-  return (result as any).rowsAffected === undefined;
-}
-
-function isResultSet(result: SQLite.ResultSet | SQLite.ResultSetError): result is SQLite.ResultSet {
-  return (result as any).rowsAffected !== undefined;
-}
-
 class StorageManagerImpl implements StorageManager {
   private db: SQLite.SQLiteDatabase | undefined = undefined;
   private ephemeralDataCount: number = 0;
 
   async initialize(): Promise<void> {
     try {
-      this.db = SQLite.openDatabase(databaseName);
-      const result1 = (await this.db.execAsync(
-        [{
-          sql: `CREATE TABLE IF NOT EXISTS ${ephemeralDataTableName} (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at INTEGER NOT NULL, expired_at INTEGER NOT NULL)`,
-          args: [],
-        }],
-        false
-      ))[0];
-      if (isResultSetError(result1)) {
-        throw result1.error;
-      }
-      const result2 = (await this.db.execAsync(
-        [{
-          sql: `CREATE TABLE IF NOT EXISTS ${longLivedDataTableName} (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at INTEGER NOT NULL)`,
-          args: [],
-        }],
-        false
-      ))[0];
-      if (isResultSetError(result2)) {
-        throw result2.error;
-      }
+      this.db = await SQLite.openDatabaseAsync(databaseName);
+      await this.db.runAsync(`CREATE TABLE IF NOT EXISTS ${ephemeralDataTableName} (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at INTEGER NOT NULL, expired_at INTEGER NOT NULL)`);
+      await this.db.runAsync(`CREATE TABLE IF NOT EXISTS ${longLivedDataTableName} (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at INTEGER NOT NULL)`);
       this.ephemeralDataCount = await this.getEphemeralDataCount();
     } catch(e: any) {
       console.log(e);
@@ -96,165 +70,79 @@ class StorageManagerImpl implements StorageManager {
 
   private async getEphemeralDataCount(): Promise<number> {
     if (this.db === undefined) return 0;
-    const result = (await this.db.execAsync(
-      [{
-        sql: `SELECT COUNT(*) FROM ${ephemeralDataTableName}`,
-        args: [],
-      }],
-      true
-    ))[0];
-    if (isResultSet(result)) {
-      return result.rows[0]['COUNT(*)'];
-    } else if (isResultSetError(result)) {
-      throw result.error;
-    }
-    return 0;
+    const result: any = await this.db.getFirstAsync(`SELECT COUNT(*) FROM ${ephemeralDataTableName}`);
+    if (result === null) return 0;
+    return result['COUNT(*)'];
   }
 
   async storeEphemeralData(key: string, value: string, now: number, ttl: number): Promise<void> {
     if (this.db === undefined || this.ephemeralDataCount >= ephemeralDataCountLimit) throw new Error('ephemeral data count limit exceeded');
     const expiredAt = now + ttl;
-    const result = (await this.db.execAsync(
-      [{
-        sql: `INSERT OR REPLACE INTO ${ephemeralDataTableName} (key, value, updated_at, expired_at) VALUES (?, ?, ?, ?)`,
-        args: [key, value, now, expiredAt],
-      }],
-      false
-    ))[0];
-    if (isResultSet(result) && result.insertId !== undefined) {
+    const dataNotExists = (await this.getEphemeralData(key)) === undefined;
+    const result = await this.db.runAsync(
+      `INSERT OR REPLACE INTO ${ephemeralDataTableName} (key, value, updated_at, expired_at) VALUES (?, ?, ?, ?)`,
+      key, value, now, expiredAt,
+    );
+    if (dataNotExists && result.changes > 0) {
       this.ephemeralDataCount++;
     }
   }
 
   public async getEphemeralData(key: string): Promise<string | undefined> {
     if (this.db === undefined) return undefined;
-    const result = (await this.db.execAsync(
-      [{
-        sql: `SELECT value FROM ${ephemeralDataTableName} WHERE key = ?`,
-        args: [key],
-      }],
-      true
-    ))[0];
-    if (isResultSet(result) && result.rows.length > 0) {
-      return result.rows[0]['value'];
-    } else if (isResultSetError(result)) {
-      console.log(result.error);
-    }
-    return undefined;
+    const result: any = (await this.db.getFirstAsync(`SELECT value FROM ${ephemeralDataTableName} WHERE key = ?`, key));
+    if (result === null) return undefined;
+    return result['value'];
   }
 
   public async getEphemeralDataWithUpdatedAt(key: string): Promise<{ value: string, updatedAt: number } | undefined> {
     if (this.db === undefined) return undefined;
-    const result = (await this.db.execAsync(
-      [{
-        sql: `SELECT value, updated_at FROM ${ephemeralDataTableName} WHERE key = ?`,
-        args: [key],
-      }],
-      true
-    ))[0];
-    if (isResultSet(result) && result.rows.length > 0) {
-      return {
-        value: result.rows[0]['value'],
-        updatedAt: result.rows[0]['updated_at'],
-      };
-    } else if (isResultSetError(result)) {
-      console.log(result.error);
-    }
-    return undefined;
+    const result: any = (await this.db.getFirstAsync(`SELECT value, updated_at FROM ${ephemeralDataTableName} WHERE key = ?`, key));
+    if (result === null) return undefined;
+    return {
+      value: result['value'],
+      updatedAt: result['updated_at'],
+    };
   }
 
   public async getUpdatedAt(key: string): Promise<number | undefined> {
     if (this.db === undefined) return undefined;
-    const result = (await this.db.execAsync(
-      [{
-        sql: `SELECT updated_at FROM ${ephemeralDataTableName} WHERE key = ?`,
-        args: [key],
-      }],
-      true
-    ))[0];
-    if (isResultSet(result) && result.rows.length > 0) {
-      return result.rows[0]['updated_at'];
-    } else if (isResultSetError(result)) {
-      console.log(result.error);
-    }
-    return undefined;
+    const result: any = (await this.db.getFirstAsync(`SELECT updated_at FROM ${ephemeralDataTableName} WHERE key = ?`, key));
+    if (result === null) return undefined;
+    return result['updated_at'];
   }
 
   public async deleteExpiredEphemeralData(now: number): Promise<void> {
     if (this.db === undefined) return;
-    const result = (await this.db.execAsync(
-      [{
-        sql: `DELETE FROM ${ephemeralDataTableName} WHERE expired_at < ?`,
-        args: [now],
-      }],
-      false
-    ))[0];
-    if (isResultSetError(result)) {
-      console.log(result.error);
-    } else if (isResultSet(result)) {
-      this.ephemeralDataCount = await this.getEphemeralDataCount();
-    }
+    await this.db.runAsync(`DELETE FROM ${ephemeralDataTableName} WHERE expired_at < ?`, now);
   }
 
   public async deleteEphemeralDataByPrefix(prefix: string): Promise<void> {
     if (this.db === undefined) return;
-    const result = (await this.db.execAsync(
-      [{
-        sql: `DELETE FROM ${ephemeralDataTableName} WHERE key LIKE ?`,
-        args: [`${prefix}%`],
-      }],
-      false
-    ))[0];
-    if (isResultSetError(result)) {
-      console.log(result.error);
-    } else if (isResultSet(result)) {
+    const result = (await this.db.runAsync(`DELETE FROM ${ephemeralDataTableName} WHERE key LIKE ?`, `${prefix}%`));
+    if (result.changes > 0) {
       this.ephemeralDataCount = await this.getEphemeralDataCount();
     }
   }
 
   public async storeLongLivedData(key: string, value: string): Promise<void> {
     if (this.db === undefined) return;
-    const result = (await this.db.execAsync(
-      [{
-        sql: `INSERT OR REPLACE INTO ${longLivedDataTableName} (key, value, updated_at) VALUES (?, ?, ?)`,
-        args: [key, value, getEpochSeconds()],
-      }],
-      false
-    ))[0];
-    if (isResultSetError(result)) {
-      console.log(result.error);
-    }
+    await this.db.runAsync(
+      `INSERT OR REPLACE INTO ${longLivedDataTableName} (key, value, updated_at) VALUES (?, ?, ?)`,
+      key, value, getEpochSeconds()
+    );
   }
 
   public async getLongLivedData(key: string): Promise<string | undefined> {
     if (this.db === undefined) return undefined;
-    const result = (await this.db.execAsync(
-      [{
-        sql: `SELECT value FROM ${longLivedDataTableName} WHERE key = ?`,
-        args: [key],
-      }],
-      true
-    ))[0];
-    if (isResultSet(result) && result.rows.length > 0) {
-      return result.rows[0]['value'];
-    } else if (isResultSetError(result)) {
-      console.log(result.error);
-    }
-    return undefined;
+    const result: any = (await this.db.getFirstAsync(`SELECT value FROM ${longLivedDataTableName} WHERE key = ?`, key));
+    if (result === null) return undefined;
+    return result['value'];
   }
 
   public async deleteLongLivedData(key: string): Promise<void> {
     if (this.db === undefined) return;
-    const result = (await this.db.execAsync(
-      [{
-        sql: `DELETE FROM ${longLivedDataTableName} WHERE key = ?`,
-        args: [key],
-      }],
-      false
-    ))[0];
-    if (isResultSetError(result)) {
-      console.log(result.error);
-    }
+    await this.db.runAsync(`DELETE FROM ${longLivedDataTableName} WHERE key = ?`, key);
   }
 }
 
